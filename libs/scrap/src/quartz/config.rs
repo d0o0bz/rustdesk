@@ -73,3 +73,19 @@ impl Default for Config {
         }
     }
 }
+
+// dec: 低功耗捕获预设。
+// macOS 双显卡机型在低功耗模式下：
+//   - throttle 提高到 ~1/15s，降低 CGDisplayStream 合成频率，减少独显唤醒
+//   - queue_length 降到 2，减少常驻 IOSurface 数量
+// 调用方据此覆盖 ENABLE_RETINA 与 video_service 的目标帧率。
+impl Config {
+    pub fn low_power() -> Config {
+        Config {
+            cursor: false,
+            letterbox: true,
+            throttle: 1.0 / 15.0,
+            queue_length: 2,
+        }
+    }
+}

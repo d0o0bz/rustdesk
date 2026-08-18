@@ -301,10 +301,25 @@ fn create_capturer(
             }
             #[cfg(not(windows))]
             {
-                log::debug!("Create capturer from scrap");
-                return Ok(Box::new(
-                    Capturer::new(display).with_context(|| "Failed to create capturer")?,
-                ));
+                // dec: macOS 双显卡低功耗开关。
+                // 开启时使用 quartz::Config::low_power()（提高 throttle、降低 queue），
+                // 并已在 macos::apply_low_power_mode 中关闭 ENABLE_RETINA，
+                // 避免 CGDisplayStream 高频合成唤醒独立显卡。
+                #[cfg(target_os = "macos")]
+                let capturer = if hbb_common::config::Config::get_option("low-power-mode") == "Y" {
+                    log::info!("low-power-mode enabled, using low-power capture config");
+                    crate::platform::macos::apply_low_power_mode(true);
+                    scrap::Capturer::new_with_config(display, scrap::quartz::Config::low_power())
+                        .with_context(|| "Failed to create capturer")?
+                } else {
+                    crate::platform::macos::apply_low_power_mode(false);
+                    scrap::Capturer::new(display)
+                        .with_context(|| "Failed to create capturer")?
+                };
+                #[cfg(not(target_os = "macos"))]
+                let capturer = Capturer::new(display)
+                    .with_context(|| "Failed to create capturer")?;
+                return Ok(Box::new(capturer));
             }
         }
     };

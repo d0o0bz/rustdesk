@@ -2116,3 +2116,15 @@ fn get_bundle_id() -> Option<String> {
         Some(bundle_id_str)
     }
 }
+
+// dec: macOS 双显卡低功耗 helper（纯 additive）。
+// low_power_mode 开启时：
+//   1. 关闭 ENABLE_RETINA，避免 Retina 全分辨率捕获唤醒独显
+//   2. 由调用方据此选择 quartz::Config::low_power() 捕获预设
+// 返回应用前后的状态，便于 video_service 动态切换。
+pub fn apply_low_power_mode(enabled: bool) {
+    let mut retina = scrap::quartz::ENABLE_RETINA.lock().unwrap();
+    // 低功耗时禁用 Retina；非低功耗时恢复默认 true
+    *retina = !enabled;
+    log::info!("low_power_mode applied: enabled={}, ENABLE_RETINA={}", enabled, *retina);
+}

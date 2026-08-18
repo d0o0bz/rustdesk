@@ -11,6 +11,12 @@ pub struct Capturer {
 
 impl Capturer {
     pub fn new(display: Display) -> io::Result<Capturer> {
+        Self::new_with_config(display, quartz::Config::default())
+    }
+
+    // dec: low-power-mode hook —— 调用方可注入低功耗捕获预设，
+    // 控 macOS CGDisplayStream 的 throttle 与 queue_length。
+    pub fn new_with_config(display: Display, config: quartz::Config) -> io::Result<Capturer> {
         let frame = Arc::new(Mutex::new(None));
 
         let f = frame.clone();
@@ -19,7 +25,7 @@ impl Capturer {
             display.width(),
             display.height(),
             quartz::PixelFormat::Argb8888,
-            Default::default(),
+            config,
             move |inner| {
                 if let Ok(mut f) = f.lock() {
                     *f = Some(inner);
