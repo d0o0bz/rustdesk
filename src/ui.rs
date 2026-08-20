@@ -432,6 +432,102 @@ impl UI {
         v
     }
 
+    // dec: 多配置支持 - 配置管理IPC接口
+    fn get_all_configs(&self) -> Value {
+        let configs = hbb_common::config::ConfigManager::get_all_configs();
+        let mut v = Value::array(0);
+        for config in configs {
+            let mut m = Value::map();
+            m.set_item("id", config.id);
+            m.set_item("name", config.name);
+            m.set_item("id_server", config.id_server);
+            m.set_item("id_port", config.id_port);
+            if let Some(relay) = config.relay_server {
+                m.set_item("relay_server", relay);
+            }
+            if let Some(port) = config.relay_port {
+                m.set_item("relay_port", port);
+            }
+            m.set_item("is_default", config.is_default);
+            m.set_item("is_available", config.is_available);
+            if let Some(latency) = config.avg_latency {
+                m.set_item("avg_latency", latency);
+            }
+            v.push(m);
+        }
+        v
+    }
+
+    fn get_current_config(&self) -> Value {
+        if let Some(config) = hbb_common::config::ConfigManager::get_current_config() {
+            let mut m = Value::map();
+            m.set_item("id", config.id);
+            m.set_item("name", config.name);
+            m.set_item("id_server", config.id_server);
+            m.set_item("id_port", config.id_port);
+            m
+        } else {
+            Value::null()
+        }
+    }
+
+    fn add_config(&self, name: String, id_server: String, id_port: i32, relay_server: String, relay_port: i32) -> String {
+        use hbb_common::config::{ConfigManager, ServerConfig};
+        let mut config = ServerConfig::default();
+        config.name = name;
+        config.id_server = id_server;
+        config.id_port = id_port;
+        if !relay_server.is_empty() {
+            config.relay_server = Some(relay_server);
+        }
+        if relay_port > 0 {
+            config.relay_port = Some(relay_port);
+        }
+        match ConfigManager::add_config(config) {
+            Ok(()) => "ok".to_string(),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    fn update_config(&self, id: String, name: String, id_server: String, id_port: i32, relay_server: String, relay_port: i32) -> String {
+        use hbb_common::config::{ConfigManager, ServerConfig};
+        let mut config = ServerConfig::default();
+        config.id = id;
+        config.name = name;
+        config.id_server = id_server;
+        config.id_port = id_port;
+        if !relay_server.is_empty() {
+            config.relay_server = Some(relay_server);
+        }
+        if relay_port > 0 {
+            config.relay_port = Some(relay_port);
+        }
+        match ConfigManager::update_config(config) {
+            Ok(()) => "ok".to_string(),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    fn delete_config(&self, id: String) -> String {
+        use hbb_common::config::ConfigManager;
+        match ConfigManager::delete_config(&id) {
+            Ok(()) => "ok".to_string(),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    fn switch_to_config(&self, id: String) -> String {
+        use hbb_common::config::{ConfigManager, ManualSwitcher, ServerConfigRepository};
+        if let Some(config) = ServerConfigRepository::find_by_id(&id) {
+            match ManualSwitcher::switch(&config) {
+                Ok(()) => "ok".to_string(),
+                Err(e) => e.to_string(),
+            }
+        } else {
+            "配置不存在".to_string()
+        }
+    }
+
     #[inline]
     fn get_peer_value(id: String, p: PeerConfig) -> Value {
         let values = vec![
