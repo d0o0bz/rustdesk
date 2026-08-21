@@ -49,6 +49,28 @@
 - **改动**：新增 `const String kOptionLowPowerMode = "low-power-mode";`。
 - **兼容性**：纯 additive 常量。
 
+## install_config_import 模块（TOML 配置导入）
+
+### 新增独立模块（无上游修改）
+
+- **文件**：`src/config_import.rs` 及 `src/config_import/{error,toml_config,toml_parser,install_dir,field_mapper,importer}.rs`
+- **改动**：新增配置导入组件，含 TOML 解析、字段映射、安装目录检测、合并存储。
+- **兼容性**：纯新增模块，由 `#[cfg(feature = "toml-config-import")]` 门控，默认不启用，对上游零侵入。
+
+### 上游文件修改
+
+- **文件**：`src/lib.rs`
+- **改动**：末尾新增 `#[cfg(feature = "toml-config-import")] mod config_import;`，带 `// dec: TOML配置导入` 注释。
+- **兼容性**：feature 门控，未启用时不编译。
+
+- **文件**：`Cargo.toml`
+- **改动**：`[features]` 段新增 `toml-config-import = []`。
+- **兼容性**：空 feature，默认不启用，不影响现有构建。
+
+- **文件**：`src/core_main.rs`
+- **改动**：三处 `#[cfg(feature = "toml-config-import")]` 门控的新增：① `core_main()` 开头自动导入钩子；② `--import-toml-config` 参数分支；③ `run_toml_import_from_args` 函数。均带 `// dec: TOML配置导入` 注释。
+- **兼容性**：feature 门控，未启用时参数分支条件 `cfg!(feature)` 为 false 不匹配，行为不变。
+
 ## 升级复核清单
 
 升级上游 tag 时，按以下顺序核对：
@@ -59,3 +81,6 @@
 4. `libs/scrap/src/quartz/config.rs` 与 `common/quartz.rs` — 确认 `Config::low_power()` 与 `Capturer::new_with_config()` 仍在。
 5. `src/platform/macos.rs` — 确认 `apply_low_power_mode` 函数仍在。
 6. `flutter/lib/consts.dart` — 确认 `kOptionLowPowerMode` 常量仍在。
+7. `src/lib.rs` — 确认 `#[cfg(feature = "toml-config-import")] mod config_import;` 仍在。
+8. `Cargo.toml` — 确认 `toml-config-import` feature 仍在。
+9. `src/core_main.rs` — 确认三处 `// dec: TOML配置导入` 标记点仍在且 `#[cfg]` 门控完整。

@@ -46,6 +46,8 @@ unix-file-copy-paste = [
     "clipboard/unix-file-copy-paste",
 ]
 screencapturekit = ["cpal/screencapturekit"]
+# dec: TOML配置导入 - 安装目录TOML配置导入组件，默认不启用
+toml-config-import = []
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -33,6 +33,9 @@ pub fn core_main() -> Option<Vec<String>> {
         return None;
     }
     crate::load_custom_client();
+    // dec: TOML配置导入
+    #[cfg(feature = "toml-config-import")]
+    hbb_common::allow_err!(crate::config_import::ConfigImporter::import_from_install_dir());
     #[cfg(windows)]
     if !crate::platform::windows::bootstrap() {
         // return None to terminate the process
@@ -433,6 +436,13 @@ pub fn core_main() -> Option<Vec<String>> {
                 import_config(&filepath);
             }
             return None;
+        } else if cfg!(feature = "toml-config-import") && args[0] == "--import-toml-config" {
+            // dec: TOML配置导入
+            #[cfg(feature = "toml-config-import")]
+            {
+                run_toml_import_from_args(&args);
+            }
+            return None;
         } else if args[0] == "--password" {
             if is_cli_setting_change_disabled() {
                 println!("Settings are disabled!");
@@ -759,6 +769,39 @@ fn import_config(path: &str) {
             log::info!("config2 written");
         }
     }
+}
+
+#[cfg(feature = "toml-config-import")]
+fn run_toml_import_from_args(args: &[String]) -> ! {
+    use crate::config_import::{ConfigImportError, ConfigImporter};
+    let mut path: Option<std::path::PathBuf> = None;
+    let mut json = false;
+    for a in &args[1..] {
+        if a == "--json" {
+            json = true;
+        } else if !a.starts_with("--") && path.is_none() {
+            path = Some(std::path::PathBuf::from(a));
+        }
+    }
+    let result = match path {
+        Some(p) => ConfigImporter::import_from_path(&p),
+        None => ConfigImporter::import_from_install_dir(),
+    };
+    let (code, message) = match result {
+        Ok(()) => (0i32, "配置导入成功".to_string()),
+        Err(ConfigImportError::PermissionDenied(_)) => (1, "权限不足".to_string()),
+        Err(ConfigImportError::TomlParseError(_)) => (2, "配置解析失败".to_string()),
+        Err(ConfigImportError::TomlConfigNotFound) => (3, "配置文件不存在".to_string()),
+        Err(e) => (4, e.to_string()),
+    };
+    if json {
+        println!("{{\"code\": {}, \"message\": \"{}\"}}", code, message);
+    } else if code == 0 {
+        println!("{}", message);
+    } else {
+        eprintln!("{}", message);
+    }
+    std::process::exit(code);
 }
 
 /// invoke a new connection

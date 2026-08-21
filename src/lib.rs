@@ -70,3 +70,7 @@ pub mod privacy_mode;
 pub mod virtual_display_manager;
 
 mod kcp_stream;
+
+// dec: TOML配置导入
+#[cfg(feature = "toml-config-import")]
+mod config_import;
