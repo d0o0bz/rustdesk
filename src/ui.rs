@@ -451,7 +451,7 @@ impl UI {
             m.set_item("is_default", config.is_default);
             m.set_item("is_available", config.is_available);
             if let Some(latency) = config.avg_latency {
-                m.set_item("avg_latency", latency);
+                m.set_item("avg_latency", latency as i32);
             }
             v.push(m);
         }
