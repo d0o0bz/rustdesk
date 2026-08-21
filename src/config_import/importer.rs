@@ -58,6 +58,21 @@ impl ConfigImporter {
         for (k, v) in &mapped.options {
             Config2::set_option(k.clone(), v.clone());
         }
+        if !mapped.rendezvous_servers.is_empty() {
+            let mut config2 = Config2::get();
+            for new_sc in &mapped.rendezvous_servers {
+                if let Some(existing) = config2
+                    .rendezvous_servers
+                    .iter_mut()
+                    .find(|c| c.id == new_sc.id)
+                {
+                    *existing = new_sc.clone();
+                } else {
+                    config2.rendezvous_servers.push(new_sc.clone());
+                }
+            }
+            Config2::set(config2);
+        }
         Ok(())
     }
 }

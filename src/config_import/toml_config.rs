@@ -28,6 +28,8 @@ pub struct TomlConfig {
     pub display: DisplayConfig,
     #[serde(default)]
     pub options: HashMap<String, String>,
+    #[serde(default)]
+    pub rendezvous_servers: Vec<TomlServerEntry>,
 }
 
 impl Default for TomlConfig {
@@ -43,6 +45,7 @@ impl Default for TomlConfig {
             network: NetworkConfig::default(),
             display: DisplayConfig::default(),
             options: HashMap::new(),
+            rendezvous_servers: Vec::new(),
         }
     }
 }
@@ -58,6 +61,7 @@ impl TomlConfig {
             && self.network == NetworkConfig::default()
             && self.display == DisplayConfig::default()
             && self.options.is_empty()
+            && self.rendezvous_servers.is_empty()
     }
 
     pub fn version(&self) -> &str {
@@ -113,6 +117,24 @@ pub struct DisplayConfig {
     pub disable_audio: bool,
     #[serde(default)]
     pub disable_clipboard: bool,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, Clone, PartialEq)]
+pub struct TomlServerEntry {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub id_server: String,
+    #[serde(default)]
+    pub id_port: i32,
+    #[serde(default)]
+    pub relay_server: Option<String>,
+    #[serde(default)]
+    pub relay_port: Option<i32>,
+    #[serde(default)]
+    pub is_default: bool,
 }
 
 #[cfg(test)]
@@ -195,6 +217,38 @@ rendezvous_server = "rs.example.com"
 "#;
         let cfg: TomlConfig = hbb_common::toml::from_str(content).unwrap();
         assert_eq!(cfg.rendezvous_server, "rs.example.com");
+        assert!(!cfg.is_empty());
+    }
+
+    #[test]
+    fn test_multi_rendezvous_servers() {
+        let content = r#"
+[[rendezvous_servers]]
+name = "Server 1"
+id_server = "rs1.rustdesk.com"
+id_port = 21116
+relay_server = "relay1.rustdesk.com"
+relay_port = 21117
+is_default = true
+
+[[rendezvous_servers]]
+name = "Server 2"
+id_server = "rs2.rustdesk.com"
+relay_server = "relay2.rustdesk.com"
+"#;
+        let cfg: TomlConfig = hbb_common::toml::from_str(content).unwrap();
+        assert_eq!(cfg.rendezvous_servers.len(), 2);
+        assert_eq!(cfg.rendezvous_servers[0].name, "Server 1");
+        assert_eq!(cfg.rendezvous_servers[0].id_server, "rs1.rustdesk.com");
+        assert_eq!(cfg.rendezvous_servers[0].id_port, 21116);
+        assert_eq!(
+            cfg.rendezvous_servers[0].relay_server.as_deref(),
+            Some("relay1.rustdesk.com")
+        );
+        assert!(cfg.rendezvous_servers[0].is_default);
+        assert_eq!(cfg.rendezvous_servers[1].name, "Server 2");
+        assert_eq!(cfg.rendezvous_servers[1].id_server, "rs2.rustdesk.com");
+        assert!(!cfg.rendezvous_servers[1].is_default);
         assert!(!cfg.is_empty());
     }
 }

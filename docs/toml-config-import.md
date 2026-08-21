@@ -63,6 +63,19 @@ show_remote_cursor = true
 disable_audio = false
 disable_clipboard = false
 
+[[rendezvous_servers]]
+name = "Primary"
+id_server = "rs1.rustdesk.com"
+id_port = 21116
+relay_server = "relay1.rustdesk.com"
+relay_port = 21117
+is_default = true
+
+[[rendezvous_servers]]
+name = "Backup"
+id_server = "rs2.rustdesk.com"
+relay_server = "relay2.rustdesk.com"
+
 [options]
 custom_resolution = "1920x1080"
 ```
@@ -94,6 +107,16 @@ custom_resolution = "1920x1080"
 | `display.disable_audio` | Boolean | `false` | 禁用音频 |
 | `display.disable_clipboard` | Boolean | `false` | 禁用剪贴板 |
 | `options.*` | String | — | 扩展选项（未知键记 WARNING 后写入） |
+| `rendezvous_servers[].name` | String | `""` | 服务器显示名称 |
+| `rendezvous_servers[].id_server` | String | `""` | ID/中继服务器地址 |
+| `rendezvous_servers[].id_port` | Integer | `21116` | ID 服务器端口 |
+| `rendezvous_servers[].relay_server` | String? | `None` | 中继服务器地址 |
+| `rendezvous_servers[].relay_port` | Integer? | `21117` | 中继服务器端口 |
+| `rendezvous_servers[].is_default` | Boolean | `false` | 是否默认服务器 |
+
+### 多中继服务器
+
+使用 TOML 数组表 `[[rendezvous_servers]]` 定义多个中继服务器，映射到 `Config2.rendezvous_servers`。导入时按 `id` 合并：已存在则更新，否则追加。`id` 未指定时自动生成 UUID，`id_port`/`relay_port` 未指定时使用默认端口（21116/21117）。
 
 ### 类型转换规则
 

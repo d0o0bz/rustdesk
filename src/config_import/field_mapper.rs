@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use hbb_common::config::Socks5Server;
+use hbb_common::config::{ServerConfig, Socks5Server};
 
-use super::toml_config::TomlConfig;
+use super::toml_config::{TomlConfig, TomlServerEntry};
 
 pub struct FieldMapper;
 
@@ -10,6 +10,7 @@ pub struct FieldMapper;
 pub struct MappedConfig {
     pub password: Option<String>,
     pub rendezvous_server: Option<String>,
+    pub rendezvous_servers: Vec<ServerConfig>,
     pub socks: Option<Socks5Server>,
     pub options: HashMap<String, String>,
 }
@@ -90,6 +91,12 @@ impl FieldMapper {
         let password = Self::map_optional_string(&toml_config.security.password);
         let rendezvous_server = Self::map_optional_string(&toml_config.rendezvous_server);
 
+        let rendezvous_servers: Vec<ServerConfig> = toml_config
+            .rendezvous_servers
+            .iter()
+            .map(to_server_config)
+            .collect();
+
         let socks = if !toml_config.network.proxy.address.is_empty() {
             Some(Socks5Server {
                 proxy: format!(
@@ -106,10 +113,29 @@ impl FieldMapper {
         MappedConfig {
             password,
             rendezvous_server,
+            rendezvous_servers,
             socks,
             options,
         }
     }
+}
+
+fn to_server_config(entry: &TomlServerEntry) -> ServerConfig {
+    let mut sc = ServerConfig::default();
+    if !entry.id.is_empty() {
+        sc.id = entry.id.clone();
+    }
+    sc.name = entry.name.clone();
+    sc.id_server = entry.id_server.clone();
+    if entry.id_port != 0 {
+        sc.id_port = entry.id_port;
+    }
+    sc.relay_server = entry.relay_server.clone();
+    if let Some(p) = entry.relay_port {
+        sc.relay_port = Some(p);
+    }
+    sc.is_default = entry.is_default;
+    sc
 }
 
 #[cfg(test)]
@@ -146,6 +172,7 @@ mod tests {
         let mapped = FieldMapper::map_to_internal_config(TomlConfig::default());
         assert!(mapped.password.is_none());
         assert!(mapped.rendezvous_server.is_none());
+        assert!(mapped.rendezvous_servers.is_empty());
         assert!(mapped.socks.is_none());
         assert!(mapped.options.is_empty());
     }
@@ -195,5 +222,36 @@ show_remote_cursor = true
         assert_eq!(socks.proxy, "127.0.0.1:1080");
         assert_eq!(socks.username, "u");
         assert_eq!(socks.password, "p");
+    }
+
+    #[test]
+    fn test_map_multi_servers() {
+        let content = r#"
+[[rendezvous_servers]]
+name = "Primary"
+id_server = "rs1.rustdesk.com"
+id_port = 21116
+relay_server = "relay1.rustdesk.com"
+relay_port = 21117
+is_default = true
+
+[[rendezvous_servers]]
+name = "Backup"
+id_server = "rs2.rustdesk.com"
+"#;
+        let cfg: TomlConfig = hbb_common::toml::from_str(content).unwrap();
+        let mapped = FieldMapper::map_to_internal_config(cfg);
+        assert_eq!(mapped.rendezvous_servers.len(), 2);
+        assert_eq!(mapped.rendezvous_servers[0].name, "Primary");
+        assert_eq!(mapped.rendezvous_servers[0].id_server, "rs1.rustdesk.com");
+        assert_eq!(mapped.rendezvous_servers[0].id_port, 21116);
+        assert_eq!(
+            mapped.rendezvous_servers[0].relay_server.as_deref(),
+            Some("relay1.rustdesk.com")
+        );
+        assert!(mapped.rendezvous_servers[0].is_default);
+        assert_eq!(mapped.rendezvous_servers[1].name, "Backup");
+        assert_eq!(mapped.rendezvous_servers[1].id_server, "rs2.rustdesk.com");
+        assert!(!mapped.rendezvous_servers[1].id.is_empty());
     }
 }
