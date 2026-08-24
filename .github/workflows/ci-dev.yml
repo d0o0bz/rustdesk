@@ -78,7 +78,7 @@ jobs:
           # - { target: i686-unknown-linux-musl     , os: ubuntu-20.04, use-cross: true }
           # - { target: x86_64-apple-darwin         , os: macos-10.15                   }
           # - { target: x86_64-pc-windows-gnu       , os: windows-2022                  }
-          # - { target: x86_64-pc-windows-msvc      , os: windows-2022                  }
+          - { target: x86_64-pc-windows-msvc      , os: windows-2022                  }
           # - { target: aarch64-pc-windows-msvc     , os: windows-11-arm                }
           - { target: x86_64-unknown-linux-gnu    , os: ubuntu-24.04                  }
           # - { target: x86_64-unknown-linux-musl   , os: ubuntu-20.04, use-cross: true }
@@ -177,7 +177,7 @@ jobs:
       with:
         use-cross: ${{ matrix.job.use-cross }}
         command: build
-        args: --locked --target=${{ matrix.job.target }}
+        args: --locked --target=${{ matrix.job.target }} --features toml-config-import
 
     - name: clean
       shell: bash
@@ -245,4 +245,4 @@ jobs:
       with:
         use-cross: ${{ matrix.job.use-cross }}
         command: test
-        args: --locked --target=${{ matrix.job.target }} ${{ steps.test-options.outputs.CARGO_TEST_OPTIONS}}
+        args: --locked --target=${{ matrix.job.target }} --features toml-config-import ${{ steps.test-options.outputs.CARGO_TEST_OPTIONS}}
