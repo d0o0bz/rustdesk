@@ -50,13 +50,13 @@ impl ConfigImporter {
             }
         }
         if let Some(server) = &mapped.rendezvous_server {
-            Config2::set_option("custom-rendezvous-server".to_string(), server.clone());
+            Config::set_option("custom-rendezvous-server".to_string(), server.clone());
         }
         if let Some(socks) = &mapped.socks {
-            Config2::set_socks(Some(socks.clone()));
+            Config::set_socks(Some(socks.clone()));
         }
         for (k, v) in &mapped.options {
-            Config2::set_option(k.clone(), v.clone());
+            Config::set_option(k.clone(), v.clone());
         }
         if !mapped.rendezvous_servers.is_empty() {
             let mut config2 = Config2::get();

@@ -2,13 +2,22 @@ use std::path::{Path, PathBuf};
 
 use super::error::TomlParseError;
 
-#[derive(Debug, hbb_common::thiserror::Error)]
+#[derive(Debug)]
 pub enum InstallDirError {
-    #[error("安装目录不存在: {0}")]
     NotFound(String),
-    #[error("无法获取可执行文件路径: {0}")]
     ExePathError(String),
 }
+
+impl std::fmt::Display for InstallDirError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InstallDirError::NotFound(s) => write!(f, "安装目录不存在: {}", s),
+            InstallDirError::ExePathError(s) => write!(f, "无法获取可执行文件路径: {}", s),
+        }
+    }
+}
+
+impl std::error::Error for InstallDirError {}
 
 impl From<InstallDirError> for super::error::ConfigImportError {
     fn from(e: InstallDirError) -> Self {

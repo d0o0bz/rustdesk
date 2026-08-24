@@ -442,6 +442,7 @@ pub fn core_main() -> Option<Vec<String>> {
             {
                 run_toml_import_from_args(&args);
             }
+            #[cfg(not(feature = "toml-config-import"))]
             return None;
         } else if args[0] == "--password" {
             if is_cli_setting_change_disabled() {
