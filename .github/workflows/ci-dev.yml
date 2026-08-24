@@ -171,6 +171,10 @@ jobs:
         rustc -V
 
     - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      with:
+        # cache key includes enabled features so the toml-config-import build gets its own cache
+        shared-key: "toml-config-import"
+        cache-targets: true
 
     - name: Build
       uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1
@@ -179,10 +183,11 @@ jobs:
         command: build
         args: --locked --target=${{ matrix.job.target }} --features toml-config-import
 
-    - name: clean
-      shell: bash
-      run: |
-        cargo clean
+    # NOTE: do NOT run `cargo clean` here — it wipes the target dir and defeats rust-cache.
+    # - name: clean
+    #   shell: bash
+    #   run: |
+    #     cargo clean
 
     # - name: Strip debug information from executable
     #   id: strip
