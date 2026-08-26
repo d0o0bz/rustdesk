@@ -71,6 +71,49 @@
 - **改动**：三处 `#[cfg(feature = "toml-config-import")]` 门控的新增：① `core_main()` 开头自动导入钩子；② `--import-toml-config` 参数分支；③ `run_toml_import_from_args` 函数。均带 `// dec: TOML配置导入` 注释。
 - **兼容性**：feature 门控，未启用时参数分支条件 `cfg!(feature)` 为 false 不匹配，行为不变。
 
+## vcpkg overlay port 补丁（aom / libyuv）
+
+这两个 overlay port 位于 `res/vcpkg/aom/`、`res/vcpkg/libyuv/`，通过 `vcpkg_from_git` 从
+**本地 `file://` 仓库**（见 `docker/README.md` "网络代理说明"）取源码，PATCHES 字段在源码层打补丁。
+升级 aom / libyuv 上游 tag 时，下列补丁需随上游改动重新核对或 rebase。
+
+### aom 补丁
+
+- **文件**：`res/vcpkg/aom/aom-uninitialized-pointer.diff`
+- **改动**：`build/cmake/aom_configure.cmake` 对 MSVC 新增 `/wd4703`（抑制"局部指针变量可能未初始化"告警）。
+- **目的**：避免将该告警升级为 error 阻断 MSVC 构建。
+- **兼容性**：纯 additive 编译选项，MSVC-only；非 MSVC 构建无影响。
+
+- **文件**：`res/vcpkg/aom/aom-install.diff`
+- **改动**：`CMakeLists.txt` 引入 `GNUInstallDirs` / `CMakePackageConfigHelpers`，为 `aom` target 设置
+  `PUBLIC_HEADER`、install 规则（含 `EXPORT unofficial-aom-targets`）并安装 CMake config 包
+  （`cmake/aom-config.cmake.in` 为新增模板）；新增 `cmake/aom-config.cmake.in`。
+- **目的**：aom 上游默认不安装 CMake 包配置文件，vcpkg 需要 `aom-config.cmake` 供下游 `find_package`
+  解析。
+- **兼容性**：additive install 规则，不改既有编译逻辑。重 patch 时需确认上游 `aom-config.cmake.in`
+  模板路径与 `PUBLIC_HEADERS` 列表仍匹配。
+
+- **文件**：`res/vcpkg/aom/aom-avx2.diff`
+- **改动**：`build/cmake/cpu.cmake` 在 `ENABLE_AVX2` 时编译期探测 `__m256i` 是否可用，不可用时回退
+  关闭 AVX2；并把 `xx_loadu_2x64` 从 `aom_dsp/x86/synonyms.h` 移除、补到 `synonyms_avx2.h`。
+- **目的**：aom v3.9.0 起 AVX2 路径需要 `__m256i` 定义，旧编译器（如 MSVC）缺该类型时会编译失败，
+  故加探测 + 回退。
+- **兼容性**：仅作用于 x86 AVX2 分支。注意：`aom-avx2.diff` 默认在 aom 3.12.1 路径下**被注释关闭**
+  （portfile 中 `# aom-avx2.diff`），仅在设 `USE_AOM_391=1`（拉 3.9.1）时才启用。重 patch 时按所选
+  REF 决定该补丁的开关。
+
+### libyuv 补丁
+
+- **文件**：`res/vcpkg/libyuv/fix-cmakelists.patch`
+- **改动**：`CMakeLists.txt` — 提升 `CMAKE_MINIMUM_REQUIRED` 到 3.12；删除 shared library 目标；
+  仅构建 static 库 `yuv` 并加 `PUBLIC_HEADER`；用 `GLOB_RECURSE` 收集 `include/libyuv/*.h` 作为安装头
+  文件；新增 `INSTALL(TARGETS ... EXPORT libyuv-targets ...)` 与 `INSTALL(EXPORT ...)` 以导出 CMake
+  targets；修正 JPEG 链接到 static 库（`PUBLIC`）。
+- **目的**：让 libyuv 上游 CMake 支持 vcpkg 的静态库安装与 `find_package` 推导（导出
+  `libyuv-targets`）。
+- **兼容性**：改动集中在 install/导出规则与库类型，不改变功能代码。重 patch 时需确认上游
+  `CMakeLists.txt` 结构与 `include/libyuv/*.h` 头路径未变。
+
 ## 升级复核清单
 
 升级上游 tag 时，按以下顺序核对：
@@ -84,3 +127,7 @@
 7. `src/lib.rs` — 确认 `#[cfg(feature = "toml-config-import")] mod config_import;` 仍在。
 8. `Cargo.toml` — 确认 `toml-config-import` feature 仍在。
 9. `src/core_main.rs` — 确认三处 `// dec: TOML配置导入` 标记点仍在且 `#[cfg]` 门控完整。
+10. `res/vcpkg/aom/portfile.cmake` 与 `res/vcpkg/aom/*.diff` — 确认三个补丁仍能 apply 到所选 aom REF
+    （3.12.1 或 3.9.1）；`aom-avx2.diff` 的开关与所选 REF 一致（3.12.1 默认关、3.9.1 默认开）。
+11. `res/vcpkg/libyuv/portfile.cmake` 与 `res/vcpkg/libyuv/fix-cmakelists.patch` — 确认补丁仍能 apply
+    到 libyuv REF `0faf8dd0e004520a61a603a4d2996d5ecc80dc3f`，且 `PUBLIC_HEADER` 头路径未随上游变动。
