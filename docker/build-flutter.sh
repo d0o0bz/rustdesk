@@ -2,7 +2,8 @@
 #
 # Build RustDesk Flutter inside the docker/Dockerfile.flutter image.
 # Source is expected at /workspace (mounted from the host).
-# Stops after `cargo build` succeeds -- no deb is produced.
+# Stops after `cargo build` succeeds. With BUILD_DEB=1 it additionally runs
+# `flutter build linux --release` and packages a .deb into /workspace.
 #
 # Usage (in container):
 #   /workspace/docker/build-flutter.sh
@@ -10,7 +11,8 @@
 # Optional env:
 #   JOBS        parallel cargo jobs (default: auto)
 #   SKIP_VCPKG set to skip vcpkg install (assume already built)
-#   BUILD_DEB  set to "1" to also run build.py (off by default)
+#   BUILD_DEB  set to "1" to also build the Flutter Linux bundle and run build.py
+#              to produce rustdesk-<ver>.deb at /workspace (off by default)
 #   FORCE_SUBMODULE / FORCE_PUBGET / FORCE_BRIDGE
 #               set any to force re-run the corresponding idempotent step
 
@@ -66,7 +68,7 @@ git config --global http.lowSpeedTime 300
 WEZTERM_DB="${CARGO_HOME:-/usr/local/cargo}/git/db/wezterm-af88228f2de8e1aa"
 WEZTERM_URL="https://gh-proxy.com/https://github.com/rustdesk-org/wezterm"
 WEZTERM_COMMIT="80174f8009f41565f0fa8c66dab90d4f9211ae16"
-if [ ! -e "$WEZTERM_DB/HEAD" ]; then
+if [ ! "$WEZTERM_DB/HEAD" ]; then
     rm -rf "$WEZTERM_DB"
     git clone --depth 1 --bare --branch rustdesk/pty_based_0.8.1 "$WEZTERM_URL" "$WEZTERM_DB"
     git -C "$WEZTERM_DB" fetch --depth 1 origin "$WEZTERM_COMMIT" 2>/dev/null || true
@@ -121,6 +123,7 @@ if ! git -C "$LIBYUV_DIR" cat-file -t "$LIBYUV_REF" >/dev/null 2>&1; then
 fi
 echo "    libyuv local source present at /workspace/$LIBYUV_DIR (REF found)"
 
+echo ""
 echo "==> [check] toolchain versions"
 rustc --version
 cargo --version
@@ -131,22 +134,24 @@ flutter_rust_bridge_codegen --version
 STEP_MARKERS=/workspace/.build-flutter-markers
 mkdir -p "$STEP_MARKERS"
 
+echo ""
 echo "==> [1/5] git submodules"
 if [ -n "${FORCE_SUBMODULE:-}" ]; then
     rm -f "$STEP_MARKERS/submodule"
 fi
-if [ -e "$STEP_MARKERS/submodule" ]; then
+if [ "$STEP_MARKERS/submodule" ]; then
     echo "    already done, skipping (set FORCE_SUBMODULE=1 to redo)"
 else
     git submodule update --init --recursive
     touch "$STEP_MARKERS/submodule"
 fi
 
+echo ""
 echo "==> [1.5/5] flutter pub get (resolves flutter/ .dart_tool/package_config.json for ffigen)"
 if [ -n "${FORCE_PUBGET:-}" ]; then
     rm -f "$STEP_MARKERS/pubget"
 fi
-if [ -e "$STEP_MARKERS/pubget" ]; then
+if [ "$STEP_MARKERS/pubget" ]; then
     echo "    already done, skipping (set FORCE_PUBGET=1 to redo)"
 else
     cd /workspace/flutter
@@ -155,11 +160,12 @@ else
     touch "$STEP_MARKERS/pubget"
 fi
 
+echo ""
 echo "==> [2/5] generate flutter_rust_bridge"
 if [ -n "${FORCE_BRIDGE:-}" ]; then
     rm -f "$STEP_MARKERS/bridge"
 fi
-if [ -e "$STEP_MARKERS/bridge" ]; then
+if [ "$STEP_MARKERS/bridge" ]; then
     echo "    already done, skipping (set FORCE_BRIDGE=1 to redo)"
 else
     # Ensure flutter deps (incl. ffigen, needed by codegen's dart binding step)
@@ -172,6 +178,7 @@ else
     touch "$STEP_MARKERS/bridge"
 fi
 
+echo ""
 echo "==> [3/5] vcpkg install (x64-linux, idempotent)"
 export VCPKG_ROOT=/opt/vcpkg
 export PATH="$VCPKG_ROOT:$PATH"
@@ -179,7 +186,7 @@ export PATH="$VCPKG_ROOT:$PATH"
 # /workspace/vcpkg_installed, but hwcodec's build.rs resolves ffmpeg headers/libs
 # via $VCPKG_ROOT/installed/<triplet> (it ignores VCPKG_INSTALLED_ROOT). Bridge
 # the two so hwcodec finds the ffmpeg artifacts without forcing a rebuild.
-if [ ! -e "$VCPKG_ROOT/installed" ]; then
+if [ ! "$VCPKG_ROOT/installed" ]; then
     ln -sfn /workspace/vcpkg_installed "$VCPKG_ROOT/installed"
 fi
 # The aom overlay port pulls source from a local file:// repo. vcpkg's default
@@ -205,19 +212,27 @@ else
     vcpkg install --triplet x64-linux
 fi
 
+echo ""
 echo "==> [4/5] cargo build (flutter lib, release)"
 cargo build --locked --lib --release \
     --features hwcodec,flutter,unix-file-copy-paste \
     ${JOBS:+--jobs "$JOBS"}
 
-echo "==> [5/5] done (no deb produced)"
+echo ""
+echo "==> [5/5] cargo lib built"
 if ls target/release/liblibrustdesk.so target/release/librustdesk.so 1>/dev/null 2>&1; then
     echo "    Rust library built:"
     ls -lh target/release/librustdesk.so target/release/liblibrustdesk.so 2>/dev/null
 fi
 
 if [ "${BUILD_DEB:-}" = "1" ]; then
-    echo "==> [optional] building deb (BUILD_DEB=1)"
+    echo ""
+    echo "==> [6/6] flutter build + deb (BUILD_DEB=1)"
+    # build.py --flutter --skip-cargo packages build/linux/x64/release/bundle/
+    # into the deb, so the Flutter Linux bundle must be produced here first.
+    # flutter build copies the rustdesk lib built in [5/5] into the bundle's lib/.
+    ( cd flutter && flutter build linux --release )
     export DEB_ARCH=amd64
     python3 ./build.py --flutter --skip-cargo
+    echo "    deb produced at /workspace/rustdesk-*.deb"
 fi

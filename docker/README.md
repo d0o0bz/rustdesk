@@ -83,8 +83,20 @@ docker/run-flutter.sh --memory=16g
 # 等价于手写：
 docker run --rm -v "$PWD:/workspace" \
     -v "$HOME/.cache/rustdesk-flutter/cargo-git:/usr/local/cargo/git" \
+    -v "$HOME/.cache/rustdesk-flutter/cargo-registry:/usr/local/cargo/registry" \
     --memory=16g rustdesk-flutter-builder /workspace/docker/build-flutter.sh
 ```
+
+cargo 的两类下载缓存都持久化到宿主机，避免每次重建容器重新拉取：
+
+- `CARGO_GIT_CACHE`（默认 `~/.cache/rustdesk-flutter/cargo-git`）：挂载到 `/usr/local/cargo/git`，
+  缓存 git 依赖（含庞大的 wezterm bare clone）。
+- `CARGO_REG_CACHE`（默认 `~/.cache/rustdesk-flutter/cargo-registry`）：挂载到
+  `/usr/local/cargo/registry`，缓存 crates.io 的 `.crate` 包与索引，省去 `cargo build` 时的
+  `Downloading crates ...`。
+
+> 注：只挂载 `git` 与 `registry` 两个子目录，不要挂载整个 `CARGO_HOME`，以免覆盖容器内
+> `/usr/local/cargo/bin` 的工具链与 `config.toml` 中的 rsproxy 镜像配置。
 
 `run-flutter.sh` 接受任意额外参数透传给 `docker run`（如 `--memory`、`--cpus`）；镜像名可用
 `RUSTDESK_FLUTTER_IMAGE` 环境变量覆盖。
@@ -119,7 +131,10 @@ FORCE_SUBMODULE=1 FORCE_PUBGET=1 FORCE_BRIDGE=1 \
 - `JOBS`：cargo 并行任务数（默认自动）。
 - `SKIP_VCPKG`：设为任意值可跳过 vcpkg 安装（仅在 native 依赖已就绪时使用，否则后续 cargo
   build 链接会失败）。
-- `BUILD_DEB=1`：在 cargo build 成功后额外跑 `build.py` 产出 deb（默认关闭）。
+- `BUILD_DEB=1`：在 cargo build 成功后，额外运行 `flutter build linux --release`（生成
+  `flutter/build/linux/x64/release/bundle/`）并调用 `build.py --flutter --skip-cargo` 打包，最终在
+  仓库根产出 `rustdesk-<version>.deb`（经 `-v "$REPO_ROOT:/workspace"` 挂载对宿主机可见）。默认关闭。
+  注意该 deb 不含 DRM 捕获变体；如需 `--drm` 变体需另行处理（见 `docs/upstream-patches.md`）。
 - `FORCE_SUBMODULE` / `FORCE_PUBGET` / `FORCE_BRIDGE`：见上，强制重跑对应步骤。
 
 ## 离线预下载项
