@@ -24,6 +24,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 
 import '../../common/widgets/dialog.dart';
 import '../../common/widgets/login.dart';
+import '../../common/widgets/server_config_dialog.dart';
 
 const double _kTabWidth = 200;
 const double _kTabHeight = 42;
@@ -1760,6 +1761,13 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
                   icon: Icons.dns_outlined,
                   title: 'ID/Relay Server',
                   onTap: () => showServerSettings(gFFI.dialogManager, setState),
+                ),
+              if (!hideServer) divider,
+              if (!hideServer)
+                listTile(
+                  icon: Icons.dns,
+                  title: 'Multiple server config',
+                  onTap: () => showServerConfigManager(gFFI.dialogManager),
                 ),
               if (!hideProxy && !hideServer) divider,
               if (!hideProxy)

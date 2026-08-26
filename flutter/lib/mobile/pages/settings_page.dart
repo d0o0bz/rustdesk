@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 import '../../common.dart';
 import '../../common/widgets/dialog.dart';
 import '../../common/widgets/login.dart';
+import '../../common/widgets/server_config_dialog.dart';
 import '../../consts.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
@@ -753,6 +754,13 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
                     _isUsingPublicServer = await bind.mainIsUsingPublicServer();
                     setState(callback);
                   });
+                }),
+          if (!disabledSettings && !_hideNetwork && !_hideServer)
+            SettingsTile(
+                title: Text(translate('Multiple server config')),
+                leading: Icon(Icons.dns),
+                onPressed: (context) {
+                  showServerConfigManager(gFFI.dialogManager);
                 }),
           if (!_hideNetwork && !_hideProxy)
             SettingsTile(

@@ -1775,3 +1775,132 @@ mod tests {
         assert_eq!(validate_windows_service_video_save_directory("  "), None);
     }
 }
+
+// dec: 多配置支持 - 暴露给 Flutter UI 的 glue 层，薄封装 ConfigManager 等已有能力
+use hbb_common::config::{Config2, ConfigManager, ManualSwitcher, ServerConfig, ServerConfigRepository};
+
+fn server_config_to_json(config: &ServerConfig) -> serde_json::Value {
+    serde_json::json!({
+        "id": &config.id,
+        "name": &config.name,
+        "id_server": &config.id_server,
+        "id_port": config.id_port,
+        "relay_server": &config.relay_server,
+        "relay_port": config.relay_port,
+        "is_default": config.is_default,
+        "is_available": config.is_available,
+        "avg_latency": config.avg_latency,
+    })
+}
+
+pub fn get_all_server_configs() -> String {
+    let configs = ConfigManager::get_all_configs();
+    let current_id = Config2::get().current_config_id;
+    let arr: Vec<serde_json::Value> = configs
+        .iter()
+        .map(|c| {
+            let mut v = server_config_to_json(c);
+            v["is_current"] = serde_json::Value::Bool(Some(&c.id) == current_id.as_ref());
+            v
+        })
+        .collect();
+    serde_json::to_string(&arr).unwrap_or_else(|_| "[]".to_string())
+}
+
+pub fn get_current_server_config() -> String {
+    match ConfigManager::get_current_config() {
+        Some(c) => serde_json::to_string(&server_config_to_json(&c)).unwrap_or_default(),
+        None => "null".to_string(),
+    }
+}
+
+pub fn add_server_config(
+    name: String,
+    id_server: String,
+    id_port: i32,
+    relay_server: String,
+    relay_port: i32,
+) -> String {
+    let mut config = ServerConfig::default();
+    config.name = name;
+    config.id_server = id_server;
+    config.id_port = id_port;
+    if !relay_server.is_empty() {
+        config.relay_server = Some(relay_server);
+    }
+    if relay_port > 0 {
+        config.relay_port = Some(relay_port);
+    }
+    match ConfigManager::add_config(config) {
+        Ok(()) => "ok".to_string(),
+        Err(e) => e.to_string(),
+    }
+}
+
+pub fn update_server_config(
+    id: String,
+    name: String,
+    id_server: String,
+    id_port: i32,
+    relay_server: String,
+    relay_port: i32,
+) -> String {
+    let mut config = match ServerConfigRepository::find_by_id(&id) {
+        Some(c) => c,
+        None => return "配置不存在".to_string(),
+    };
+    config.name = name;
+    config.id_server = id_server;
+    config.id_port = id_port;
+    config.relay_server = if relay_server.is_empty() {
+        None
+    } else {
+        Some(relay_server)
+    };
+    config.relay_port = if relay_port > 0 {
+        Some(relay_port)
+    } else {
+        None
+    };
+    match ConfigManager::update_config(config) {
+        Ok(()) => "ok".to_string(),
+        Err(e) => e.to_string(),
+    }
+}
+
+pub fn delete_server_config(id: String) -> String {
+    match ConfigManager::delete_config(&id) {
+        Ok(()) => "ok".to_string(),
+        Err(e) => e.to_string(),
+    }
+}
+
+pub fn switch_server_config(id: String) -> String {
+    match ServerConfigRepository::find_by_id(&id) {
+        Some(config) => match ManualSwitcher::switch(&config) {
+            Ok(()) => "ok".to_string(),
+            Err(e) => e.to_string(),
+        },
+        None => "配置不存在".to_string(),
+    }
+}
+
+pub fn check_server_config(id: String) -> String {
+    match ServerConfigRepository::find_by_id(&id) {
+        Some(config) => {
+            let result = hbb_common::config::AvailabilityChecker::check(&config);
+            serde_json::to_string(&result).unwrap_or_default()
+        }
+        None => "null".to_string(),
+    }
+}
+
+pub fn get_auto_switch_enabled() -> bool {
+    Config2::get().auto_switch_enabled
+}
+
+pub fn set_auto_switch_enabled(enabled: bool) {
+    let mut config2 = Config2::get();
+    config2.auto_switch_enabled = enabled;
+    Config2::set(config2);
+}

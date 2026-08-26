@@ -2993,3 +2993,53 @@ pub mod server_side {
         jboolean::from(crate::server::is_clipboard_service_ok())
     }
 }
+
+// dec: 多配置支持 - 暴露给 Flutter 的多服务器配置接口
+pub fn main_get_all_server_configs() -> String {
+    get_all_server_configs()
+}
+
+pub fn main_get_current_server_config() -> String {
+    get_current_server_config()
+}
+
+pub fn main_add_server_config(
+    name: String,
+    id_server: String,
+    id_port: i32,
+    relay_server: String,
+    relay_port: i32,
+) -> String {
+    add_server_config(name, id_server, id_port, relay_server, relay_port)
+}
+
+pub fn main_update_server_config(
+    id: String,
+    name: String,
+    id_server: String,
+    id_port: i32,
+    relay_server: String,
+    relay_port: i32,
+) -> String {
+    update_server_config(id, name, id_server, id_port, relay_server, relay_port)
+}
+
+pub fn main_delete_server_config(id: String) -> String {
+    delete_server_config(id)
+}
+
+pub fn main_switch_server_config(id: String) -> String {
+    switch_server_config(id)
+}
+
+pub fn main_check_server_config(id: String) -> String {
+    check_server_config(id)
+}
+
+pub fn main_get_auto_switch_enabled() -> bool {
+    get_auto_switch_enabled()
+}
+
+pub fn main_set_auto_switch_enabled(enabled: bool) {
+    set_auto_switch_enabled(enabled)
+}
