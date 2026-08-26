@@ -73,9 +73,16 @@
 
 ## vcpkg overlay port 补丁（aom / libyuv）
 
-这两个 overlay port 位于 `res/vcpkg/aom/`、`res/vcpkg/libyuv/`，通过 `vcpkg_from_git` 从
-**本地 `file://` 仓库**（见 `docker/README.md` "网络代理说明"）取源码，PATCHES 字段在源码层打补丁。
-升级 aom / libyuv 上游 tag 时，下列补丁需随上游改动重新核对或 rebase。
+这两个 overlay port 位于 `res/vcpkg/aom/`、`res/vcpkg/libyuv/`，通过 `vcpkg_from_git` 取源码。
+取源码 URL 由 portfile 中的环境变量切换：
+
+- `res/vcpkg/aom/portfile.cmake`：若设 `AOM_SRC_URL` 则用之，否则回落 `https://aomedia.googlesource.com/aom`。
+- `res/vcpkg/libyuv/portfile.cmake`：若设 `LIBYUV_SRC_URL` 则用之，否则回落 `https://chromium.googlesource.com/libyuv/libyuv`。
+
+本地 Docker 构建（`docker/build-flutter.sh`）会 `export AOM_SRC_URL` / `LIBYUV_SRC_URL` 指向本地
+`file:///workspace/docker/...` 仓库（见 `docker/README.md` "网络代理说明"），使 vcpkg 跳过网络直接读
+本地 git 仓库；GitHub CI 不设置这两个变量，portfile 走上游 googlesource 真实 URL。升级 aom / libyuv
+上游 tag 时，下列补丁需随上游改动重新核对或 rebase。
 
 ### aom 补丁
 
