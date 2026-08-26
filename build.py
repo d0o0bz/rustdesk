@@ -140,6 +140,11 @@ def make_parser():
         help='Build with unix file copy paste feature'
     )
     parser.add_argument(
+        '--toml-config-import',
+        action='store_true',
+        help='Build with the toml-config-import feature'
+    )
+    parser.add_argument(
         '--drm',
         action='store_true',
         help='Linux only: build the DRM/KMS capture backend (bundles libdrmtap.so, '
@@ -322,6 +327,8 @@ def get_features(args):
         features.append('flutter')
     if args.unix_file_copy_paste:
         features.append('unix-file-copy-paste')
+    if args.toml_config_import:
+        features.append('toml-config-import')
     if args.drm:
         # Say so rather than quietly handing back a stock build: the backend is Linux-only, so on
         # any other host the flag cannot be honoured and the resulting binary would look like a
