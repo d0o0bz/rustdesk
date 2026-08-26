@@ -59,3 +59,11 @@ flutter/web/
 # libdrmtap is cloned at build time by build.py (not a submodule)
 /third_party/libdrmtap/
 .codeartsdoer*
+docker/flutter_linux_*-stable.tar.xz
+.codebuddy/plans/deepin25-rustdesk-flutter-build-env_86ca1783(未完成).md
+.codebuddy/plans/deepin25-rustdesk-flutter-docker-build_a031f31a(未完成).md
+# build-flutter.sh local caches (pre-cloned aom/libyuv local source repos, step markers)
+docker/aom-src/
+docker/libyuv-src/
+.build-flutter-markers/
+docker/vcpkg-downloads/*
