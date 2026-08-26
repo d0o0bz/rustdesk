@@ -67,3 +67,4 @@ docker/aom-src/
 docker/libyuv-src/
 .build-flutter-markers/
 docker/vcpkg-downloads/*
+.codebuddy/plans/*
