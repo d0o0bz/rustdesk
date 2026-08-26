@@ -215,7 +215,7 @@ fi
 echo ""
 echo "==> [4/5] cargo build (flutter lib, release)"
 cargo build --locked --lib --release \
-    --features hwcodec,flutter,unix-file-copy-paste \
+    --features hwcodec,flutter,unix-file-copy-paste,toml-config-import \
     ${JOBS:+--jobs "$JOBS"}
 
 echo ""
