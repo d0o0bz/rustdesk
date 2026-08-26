@@ -8,10 +8,16 @@ vcpkg_find_acquire_program(PERL)
 get_filename_component(PERL_PATH ${PERL} DIRECTORY)
 vcpkg_add_to_path(${PERL_PATH})
 
+if(DEFINED ENV{AOM_SRC_URL})
+    set(AOM_URL "$ENV{AOM_SRC_URL}")
+else()
+    set(AOM_URL "https://aomedia.googlesource.com/aom")
+endif()
+
 if(DEFINED ENV{USE_AOM_391})
     vcpkg_from_git(
         OUT_SOURCE_PATH SOURCE_PATH
-        URL "file:///workspace/docker/aom-src/aom_aomedia.googlesource.com"
+        URL "${AOM_URL}"
         REF 8ad484f8a18ed1853c094e7d3a4e023b2a92df28 # 3.9.1
         PATCHES
             aom-uninitialized-pointer.diff
@@ -21,7 +27,7 @@ if(DEFINED ENV{USE_AOM_391})
 else()
     vcpkg_from_git(
         OUT_SOURCE_PATH SOURCE_PATH
-        URL "file:///workspace/docker/aom-src/aom_aomedia.googlesource.com"
+        URL "${AOM_URL}"
         REF 10aece4157eb79315da205f39e19bf6ab3ee30d0 # 3.12.1
         PATCHES
             aom-uninitialized-pointer.diff

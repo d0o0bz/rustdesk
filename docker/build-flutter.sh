@@ -81,6 +81,10 @@ fi
 # googlesource, then copied into the build tree). The portfile reads it via a
 # file:// URL so vcpkg skips the network entirely. Verify it is present and
 # contains both required REFs; we cannot clone it from inside the container.
+# Point the overlay ports at these local repos via env vars (the portfiles fall
+# back to the upstream googlesource URLs when these are unset, e.g. on CI).
+export AOM_SRC_URL="file:///workspace/docker/aom-src/aom_aomedia.googlesource.com"
+export LIBYUV_SRC_URL="file:///workspace/docker/libyuv-src/libyuv"
 AOM_DIR=docker/aom-src/aom_aomedia.googlesource.com
 AOM_REF_3121="10aece4157eb79315da205f39e19bf6ab3ee30d0"
 AOM_REF_391="8ad484f8a18ed1853c094e7d3a4e023b2a92df28"

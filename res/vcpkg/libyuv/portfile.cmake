@@ -1,8 +1,14 @@
 vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
 
+if(DEFINED ENV{LIBYUV_SRC_URL})
+    set(LIBYUV_URL "$ENV{LIBYUV_SRC_URL}")
+else()
+    set(LIBYUV_URL "https://chromium.googlesource.com/libyuv/libyuv")
+endif()
+
 vcpkg_from_git(
     OUT_SOURCE_PATH SOURCE_PATH
-    URL file:///workspace/docker/libyuv-src/libyuv
+    URL "${LIBYUV_URL}"
     REF 0faf8dd0e004520a61a603a4d2996d5ecc80dc3f
     # Check https://chromium.googlesource.com/libyuv/libyuv/+/refs/heads/main/include/libyuv/version.h for a version!
     PATCHES
