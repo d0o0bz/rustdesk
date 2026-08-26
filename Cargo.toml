@@ -47,7 +47,7 @@ unix-file-copy-paste = [
 ]
 screencapturekit = ["cpal/screencapturekit"]
 # dec: TOML配置导入 - 安装目录TOML配置导入组件，默认不启用
-toml-config-import = []
+toml-config-import = ["dep:log"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -55,6 +55,7 @@ toml-config-import = []
 async-trait = "0.1"
 scrap = { path = "libs/scrap", features = ["wayland"] }
 hbb_common = { path = "libs/hbb_common" }
+log = "0.4"
 serde_derive = "1.0"
 serde = "1.0"
 serde_json = "1.0"
