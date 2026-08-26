@@ -1,0 +1,155 @@
+# RustDesk Flutter build image (debian:12 / bookworm)
+#
+# Builds the Flutter version of RustDesk. The image only bakes in the
+# toolchain + native deps; the project source is mounted at /workspace at
+# runtime (see docker/build-flutter.sh).
+#
+#   docker build -f docker/Dockerfile.flutter -t rustdesk-flutter-builder .
+#   docker run --rm -v "$PWD:/workspace" --memory=12g \
+#       rustdesk-flutter-builder /workspace/docker/build-flutter.sh
+#
+# Build context must be the repository root so that .github/patches/* is
+# reachable via COPY.
+
+FROM debian:12
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:/opt/flutter/bin:/usr/local/bin:$PATH
+
+# ---------------------------------------------------------------------------
+# Layer a: system build dependencies (apt via Tuna mirror)
+# ---------------------------------------------------------------------------
+RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g; s|security.debian.org|mirrors.tuna.tsinghua.edu.cn/debian-security|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        clang \
+        curl \
+        gcc \
+        git \
+        g++ \
+        autoconf \
+        automake \
+        libtool \
+        libayatana-appindicator3-dev \
+        libasound2-dev \
+        libclang-dev \
+        libgstreamer1.0-dev \
+        libgstreamer-plugins-base1.0-dev \
+        libgtk-3-dev \
+        libpulse-dev \
+        libva-dev \
+        libxcb-randr0-dev \
+        libxcb-shape0-dev \
+        libxcb-xfixes0-dev \
+        libxdo-dev \
+        libxfixes-dev \
+        llvm-dev \
+        nasm \
+        ninja-build \
+        pkg-config \
+        python3 \
+        unzip \
+        zip \
+        wget \
+        xz-utils \
+        libssl-dev \
+        dpkg-dev \
+    && apt-get remove -y libopus-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------------------
+# Layer a2: cmake 3.30.1 (vcpkg baseline requires >= 3.30.1; Debian 12 ships
+# 3.25.1, which forces vcpkg to download cmake at build time). Preinstall so
+# the image is self-contained and vcpkg skips its runtime cmake download.
+# ---------------------------------------------------------------------------
+ARG CMAKE_VERSION=3.30.1
+# Download into a BuildKit cache mount so that a failed build keeps the partial
+# tarball; a retried build resumes via curl -C - (see docker/build-image.sh retry loop).
+RUN --mount=type=cache,target=/opt/cmake-dl,sharing=locked \
+    set -eux; \
+    CMAKE_URL="https://gh-proxy.com/https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"; \
+    curl -fSL --retry 10 --retry-all-errors --retry-delay 5 -C - "$CMAKE_URL" -o /opt/cmake-dl/cmake.tgz \
+    && tar -xzf /opt/cmake-dl/cmake.tgz -C /opt \
+    && ln -sf "/opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake" /usr/local/bin/cmake \
+    && ln -sf "/opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest" /usr/local/bin/ctest \
+    && ln -sf "/opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cpack" /usr/local/bin/cpack \
+    && rm -f /opt/cmake-dl/cmake.tgz \
+    && cmake --version
+
+# ---------------------------------------------------------------------------
+# Layer a3: ninja / meson / pkgconf (vcpkg auto-acquires these at build time and
+# its GitHub downloads fail behind the proxy; preinstall so vcpkg skips them).
+# ---------------------------------------------------------------------------
+# pkgconf from apt satisfies vcpkg's `pkgconf` requirement; python3-pip for meson.
+RUN apt-get update && apt-get install -y --no-install-recommends pkgconf python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# ninja >= 1.12.1 (Debian 12 ships 1.11.1). Prebuilt binary via gh-proxy GitHub.
+ARG NINJA_VERSION=1.12.1
+RUN --mount=type=cache,target=/opt/ninja-dl,sharing=locked \
+    set -eux; \
+    NINJA_URL="https://gh-proxy.com/https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-linux.zip"; \
+    curl -fSL --retry 10 --retry-all-errors --retry-delay 5 -C - "$NINJA_URL" -o /opt/ninja-dl/ninja-linux.zip \
+    && unzip -o /opt/ninja-dl/ninja-linux.zip -d /usr/local/bin \
+    && rm -f /opt/ninja-dl/ninja-linux.zip \
+    && ninja --version
+
+# meson >= 1.8.2 (Debian 12 ships 1.0.1). Installed via pip (Tuna mirror).
+RUN python3 -m pip install --break-system-packages --index-url https://pypi.tuna.tsinghua.edu.cn/simple "meson==1.8.2" \
+    && meson --version
+
+# ---------------------------------------------------------------------------
+# Layer b: Rust 1.75 (locked, avoids i128 ABI break in 1.78+; via rsproxy)
+# ---------------------------------------------------------------------------
+ENV RUSTUP_DIST_SERVER=https://rsproxy.cn \
+    RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup \
+    CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+RUN curl -sSf https://rsproxy.cn/rustup-init.sh | sh -s -- -y --default-toolchain 1.75 \
+    && rustup target add x86_64-unknown-linux-gnu \
+    && rustup component add rustfmt \
+    && printf '[source.crates-io]\nreplace-with = "rsproxy-sparse"\n[source.rsproxy-sparse]\nregistry = "sparse+https://rsproxy.cn/index/"\n' > /usr/local/cargo/config.toml
+
+# ---------------------------------------------------------------------------
+# Layer c: flutter_rust_bridge codegen (crates via rsproxy)
+# ---------------------------------------------------------------------------
+RUN cargo install flutter_rust_bridge_codegen --version 1.80.1 --features "uuid" --locked
+
+# ---------------------------------------------------------------------------
+# Layer d: vcpkg (clone + checkout baseline + bootstrap; install runs in script)
+# ---------------------------------------------------------------------------
+ENV VCPKG_ROOT=/opt/vcpkg
+RUN git clone https://gitee.com/mirrors/vcpkg /opt/vcpkg \
+    && cd /opt/vcpkg \
+    && git checkout 120deac3062162151622ca4860575a33844ba10b \
+    && sed -i 's#https://github.com#https://ghproxy.net/https://github.com#g' scripts/bootstrap.sh \
+    && sed -i 's#curl -L \$url --tlsv1.2 --create-dirs --retry 3 --output "\$downloadPath.part" --silent --show-error --fail#curl -L $url --tlsv1.2 --create-dirs --retry 10 --retry-all-errors --retry-delay 5 -C - --output "$downloadPath.part" --silent --show-error --fail#g' scripts/bootstrap.sh \
+    && ./bootstrap-vcpkg.sh
+
+# ---------------------------------------------------------------------------
+# Layer e: Flutter 3.24.5 + precache + required patch (via Tuna mirror)
+# ---------------------------------------------------------------------------
+ENV FLUTTER_VERSION=3.24.5 \
+    FLUTTER_STORAGE_BASE_URL=https://mirrors.tuna.tsinghua.edu.cn/flutter \
+    PUB_HOSTED_URL=https://mirrors.tuna.tsinghua.edu.cn/dart-pub
+COPY docker/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz /opt/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz
+RUN set -eux; \
+    cd /opt; \
+    tar xf "flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"; \
+    rm -f "flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"; \
+    flutter --version; \
+    flutter precache
+
+# Apply the dropdown-menu patch required by RustDesk on Flutter 3.24.x.
+# /opt/flutter is the Flutter framework git repo.
+COPY .github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff /tmp/flutter_dropdown.patch
+RUN cd /opt/flutter && git apply /tmp/flutter_dropdown.patch
+
+# Allow Git operations in the mounted source tree (/workspace) and the Flutter
+# SDK (/opt/flutter), whose ownership differs from the container user at runtime.
+RUN git config --global --add safe.directory /workspace \
+    && git config --global --add safe.directory /opt/flutter
+
+WORKDIR /workspace
