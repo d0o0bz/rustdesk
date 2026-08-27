@@ -9,6 +9,14 @@
 # The crates.io download cache (/usr/local/cargo/registry) is persisted the same
 # way, so crate tarballs are not re-downloaded on every run.
 #
+# The Flutter pub cache (/root/.pub-cache, holding every dart package tarball and
+# every git-based dependency clone such as rustdesk-org/*) is also persisted on
+# the host. flutter's git deps are fetched by libgit2, which ignores the git
+# insteadOf proxy rewrites that cargo's CLI honors, so the build environment
+# cannot reach github.com for those clones. Persisting the cache means `flutter
+# pub get` hits local disk instead of re-cloning github on every run -- the cache
+# only needs to be populated once (e.g. on a machine with github access).
+#
 # Usage:
 #   docker/run-flutter.sh [extra docker run args...]
 #   docker/run-flutter.sh --memory=16g
@@ -28,14 +36,19 @@ CARGO_REG_CACHE="${CARGO_REG_CACHE:-$HOME/.cache/rustdesk-flutter/cargo-registry
 # deps from github). Mounted into the container's vcpkg download cache so vcpkg
 # reuses them instead of fetching github.com directly (which is unreachable).
 VCPKG_DL_CACHE="${VCPKG_DL_CACHE:-$SCRIPT_DIR/vcpkg-downloads}"
+# Host dir persisting Flutter's pub cache so git-based dart deps (rustdesk-org/*)
+# are not re-cloned from github.com on every run.
+PUB_CACHE="${PUB_CACHE:-$HOME/.cache/rustdesk-flutter/pub-cache}"
 
-mkdir -p "$CARGO_GIT_CACHE" "$CARGO_REG_CACHE" "$VCPKG_DL_CACHE"
+mkdir -p "$CARGO_GIT_CACHE" "$CARGO_REG_CACHE" "$VCPKG_DL_CACHE" "$PUB_CACHE"
 
 exec docker run --rm \
     -v "$REPO_ROOT:/workspace" \
     -v "$CARGO_GIT_CACHE:/usr/local/cargo/git" \
     -v "$CARGO_REG_CACHE:/usr/local/cargo/registry" \
     -v "$VCPKG_DL_CACHE:/opt/vcpkg/downloads" \
+    -v "$PUB_CACHE:/root/.pub-cache" \
     -e CARGO_HOME=/usr/local/cargo \
+    -e PUB_CACHE=/root/.pub-cache \
     "$@" \
     "$IMAGE" /workspace/docker/build-flutter.sh

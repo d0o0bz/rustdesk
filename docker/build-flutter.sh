@@ -143,7 +143,7 @@ echo "==> [1/5] git submodules"
 if [ -n "${FORCE_SUBMODULE:-}" ]; then
     rm -f "$STEP_MARKERS/submodule"
 fi
-if [ "$STEP_MARKERS/submodule" ]; then
+if [ -f "$STEP_MARKERS/submodule" ]; then
     echo "    already done, skipping (set FORCE_SUBMODULE=1 to redo)"
 else
     git submodule update --init --recursive
@@ -152,13 +152,15 @@ fi
 
 echo ""
 echo "==> [1.5/5] flutter pub get (resolves flutter/ .dart_tool/package_config.json for ffigen)"
+echo "    PUB_CACHE=$PUB_CACHE"
 if [ -n "${FORCE_PUBGET:-}" ]; then
     rm -f "$STEP_MARKERS/pubget"
 fi
-if [ "$STEP_MARKERS/pubget" ]; then
+if [ -f "$STEP_MARKERS/pubget" ]; then
     echo "    already done, skipping (set FORCE_PUBGET=1 to redo)"
 else
     cd /workspace/flutter
+    flutter pub get --verbose 2>&1 | grep -iE 'flutter_gpu_texture_renderer|ffigen|Got dependencies|Failed to connect|Could not|error' | head -20 || true
     flutter pub get
     cd /workspace
     touch "$STEP_MARKERS/pubget"
@@ -169,7 +171,7 @@ echo "==> [2/5] generate flutter_rust_bridge"
 if [ -n "${FORCE_BRIDGE:-}" ]; then
     rm -f "$STEP_MARKERS/bridge"
 fi
-if [ "$STEP_MARKERS/bridge" ]; then
+if [ -f "$STEP_MARKERS/bridge" ]; then
     echo "    already done, skipping (set FORCE_BRIDGE=1 to redo)"
 else
     # Ensure flutter deps (incl. ffigen, needed by codegen's dart binding step)
@@ -178,6 +180,7 @@ else
     flutter_rust_bridge_codegen \
         --rust-input ./src/flutter_ffi.rs \
         --dart-output ./flutter/lib/generated_bridge.dart \
+        --rust-output ./src/bridge_generated.rs \
         --c-output ./flutter/macos/Runner/bridge_generated.h
     touch "$STEP_MARKERS/bridge"
 fi
@@ -190,9 +193,17 @@ export PATH="$VCPKG_ROOT:$PATH"
 # /workspace/vcpkg_installed, but hwcodec's build.rs resolves ffmpeg headers/libs
 # via $VCPKG_ROOT/installed/<triplet> (it ignores VCPKG_INSTALLED_ROOT). Bridge
 # the two so hwcodec finds the ffmpeg artifacts without forcing a rebuild.
-if [ ! "$VCPKG_ROOT/installed" ]; then
-    ln -sfn /workspace/vcpkg_installed "$VCPKG_ROOT/installed"
+#
+# The symlink must point at /opt/vcpkg/installed itself. A bare `ln -sfn SRC DST`
+# where DST already exists as a real directory creates SRC *inside* DST instead of
+# replacing it, which silently breaks the bridge and makes scrap fail to find
+# libvpx.a. Use -T to treat DST as the link name, and ensure the target exists
+# first so the link is never dangling.
+mkdir -p /workspace/vcpkg_installed
+if [ ! -L "$VCPKG_ROOT/installed" ]; then
+    rm -rf "$VCPKG_ROOT/installed"
 fi
+ln -sfnT /workspace/vcpkg_installed "$VCPKG_ROOT/installed"
 # The aom overlay port pulls source from a local file:// repo. vcpkg's default
 # shallow clone (git fetch --depth 1) fails to resolve the pinned REF from a
 # local non-bare repo, so force a full clone instead.
