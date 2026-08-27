@@ -23,7 +23,7 @@ Future<void> showServerConfigManager(
       final relayServerCtrl =
           TextEditingController(text: item?.relayServer ?? '');
       final relayPortCtrl = TextEditingController(
-          text: item?.relayPort != null ? '${item.relayPort}' : '');
+          text: item?.relayPort != null ? '${item?.relayPort}' : '');
       var inProgress = false;
 
       await dialogManager.show<bool>((editSetState, editClose, _) {
@@ -96,7 +96,6 @@ Future<void> showServerConfigManager(
           content: ConstrainedBox(
             constraints: const BoxConstraints(minWidth: 400),
             child: Form(
-              key: formKey,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
