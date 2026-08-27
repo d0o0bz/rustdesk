@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use hbb_common::config::{Config, Config2};
+use hbb_common::config::Config;
 
 use super::error::ConfigImportError;
 use super::field_mapper::{FieldMapper, MappedConfig};
