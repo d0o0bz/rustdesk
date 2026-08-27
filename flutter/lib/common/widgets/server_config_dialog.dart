@@ -24,6 +24,9 @@ Future<void> showServerConfigManager(
           TextEditingController(text: item?.relayServer ?? '');
       final relayPortCtrl = TextEditingController(
           text: item?.relayPort != null ? '${item?.relayPort}' : '');
+      final apiServerCtrl =
+          TextEditingController(text: item?.apiServer ?? '');
+      final keyCtrl = TextEditingController(text: item?.key ?? '');
       var inProgress = false;
 
       await dialogManager.show<bool>((editSetState, editClose, _) {
@@ -31,9 +34,11 @@ Future<void> showServerConfigManager(
           editSetState(() => inProgress = true);
           final name = nameCtrl.text.trim();
           final idServer = idServerCtrl.text.trim();
-          final idPort = int.tryParse(idPortCtrl.text.trim()) ?? 0;
+          final idPort = int.tryParse(idPortCtrl.text.trim()) ?? 21116;
           final relayServer = relayServerCtrl.text.trim();
-          final relayPort = int.tryParse(relayPortCtrl.text.trim());
+          final relayPort = int.tryParse(relayPortCtrl.text.trim()) ?? 21117;
+          final apiServer = apiServerCtrl.text.trim();
+          final key = keyCtrl.text.trim();
 
           String? err;
           if (isEdit) {
@@ -44,6 +49,8 @@ Future<void> showServerConfigManager(
               idPort: idPort,
               relayServer: relayServer,
               relayPort: relayPort,
+              apiServer: apiServer,
+              key: key,
             );
           } else {
             err = await state.add(
@@ -52,6 +59,8 @@ Future<void> showServerConfigManager(
               idPort: idPort,
               relayServer: relayServer,
               relayPort: relayPort,
+              apiServer: apiServer,
+              key: key,
             );
           }
           editSetState(() => inProgress = false);
@@ -110,6 +119,11 @@ Future<void> showServerConfigManager(
                     const SizedBox(height: 8),
                     field(translate('Relay Server Port'), relayPortCtrl,
                         numeric: true),
+                  ],
+                  if (!isIOS && !isWeb) ...[
+                    field(translate('API Server'), apiServerCtrl),
+                    const SizedBox(height: 8),
+                    field(translate('Key'), keyCtrl),
                   ],
                   if (inProgress)
                     const Padding(

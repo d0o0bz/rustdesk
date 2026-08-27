@@ -1787,6 +1787,8 @@ fn server_config_to_json(config: &ServerConfig) -> serde_json::Value {
         "id_port": config.id_port,
         "relay_server": &config.relay_server,
         "relay_port": config.relay_port,
+        "api_server": &config.api_server,
+        "key": &config.key,
         "is_default": config.is_default,
         "is_available": config.is_available,
         "avg_latency": config.avg_latency,
@@ -1820,6 +1822,8 @@ pub fn add_server_config(
     id_port: i32,
     relay_server: String,
     relay_port: i32,
+    api_server: String,
+    key: String,
 ) -> String {
     let mut config = ServerConfig::default();
     config.name = name;
@@ -1830,6 +1834,12 @@ pub fn add_server_config(
     }
     if relay_port > 0 {
         config.relay_port = Some(relay_port);
+    }
+    if !api_server.is_empty() {
+        config.api_server = Some(api_server);
+    }
+    if !key.is_empty() {
+        config.key = Some(key);
     }
     match ConfigManager::add_config(config) {
         Ok(()) => "ok".to_string(),
@@ -1844,6 +1854,8 @@ pub fn update_server_config(
     id_port: i32,
     relay_server: String,
     relay_port: i32,
+    api_server: String,
+    key: String,
 ) -> String {
     let mut config = match ServerConfigRepository::find_by_id(&id) {
         Some(c) => c,
@@ -1862,6 +1874,12 @@ pub fn update_server_config(
     } else {
         None
     };
+    config.api_server = if api_server.is_empty() {
+        None
+    } else {
+        Some(api_server)
+    };
+    config.key = if key.is_empty() { None } else { Some(key) };
     match ConfigManager::update_config(config) {
         Ok(()) => "ok".to_string(),
         Err(e) => e.to_string(),

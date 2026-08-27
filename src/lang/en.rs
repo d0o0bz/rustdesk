@@ -276,5 +276,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("whitelist_cidr_tip", "CIDR notation is supported, e.g. 192.168.1.0/24"),
         ("Your ip is blocked by the peer", "Your IP is blocked by the peer"),
         ("Delete server config tip", "Delete server config {name}?"),
+        ("Key", ""),
     ].iter().cloned().collect();
 }

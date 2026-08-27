@@ -12,6 +12,8 @@ class ServerConfigItem {
   final int idPort;
   final String relayServer;
   final int? relayPort;
+  final String apiServer;
+  final String key;
   final bool isDefault;
   final bool isCurrent;
   final bool isAvailable;
@@ -24,6 +26,8 @@ class ServerConfigItem {
     required this.idPort,
     this.relayServer = '',
     this.relayPort,
+    this.apiServer = '',
+    this.key = '',
     this.isDefault = false,
     this.isCurrent = false,
     this.isAvailable = false,
@@ -38,6 +42,8 @@ class ServerConfigItem {
       idPort: (json['id_port'] as num?)?.toInt() ?? 0,
       relayServer: json['relay_server'] as String? ?? '',
       relayPort: (json['relay_port'] as num?)?.toInt(),
+      apiServer: json['api_server'] as String? ?? '',
+      key: json['key'] as String? ?? '',
       isDefault: json['is_default'] as bool? ?? false,
       isCurrent: json['is_current'] as bool? ?? false,
       isAvailable: json['is_available'] as bool? ?? false,
@@ -83,6 +89,8 @@ class ServerConfigState extends ChangeNotifier {
     required int idPort,
     String relayServer = '',
     int? relayPort,
+    String apiServer = '',
+    String key = '',
   }) async {
     final ret = await bind.mainAddServerConfig(
       name: name,
@@ -90,6 +98,8 @@ class ServerConfigState extends ChangeNotifier {
       idPort: idPort,
       relayServer: relayServer,
       relayPort: relayPort ?? 0,
+      apiServer: apiServer,
+      key: key,
     );
     if (ret == 'ok') {
       await load();
@@ -106,6 +116,8 @@ class ServerConfigState extends ChangeNotifier {
     required int idPort,
     String relayServer = '',
     int? relayPort,
+    String apiServer = '',
+    String key = '',
   }) async {
     final ret = await bind.mainUpdateServerConfig(
       id: id,
@@ -114,6 +126,8 @@ class ServerConfigState extends ChangeNotifier {
       idPort: idPort,
       relayServer: relayServer,
       relayPort: relayPort ?? 0,
+      apiServer: apiServer,
+      key: key,
     );
     if (ret == 'ok') {
       await load();
@@ -160,6 +174,8 @@ class ServerConfigState extends ChangeNotifier {
           idPort: old.idPort,
           relayServer: old.relayServer,
           relayPort: old.relayPort,
+          apiServer: old.apiServer,
+          key: old.key,
           isDefault: old.isDefault,
           isCurrent: old.isCurrent,
           isAvailable: available,

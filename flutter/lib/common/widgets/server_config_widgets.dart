@@ -103,6 +103,14 @@ class ServerConfigCard extends StatelessWidget {
               style: const TextStyle(fontSize: 13, color: Colors.grey),
               overflow: TextOverflow.ellipsis,
             ),
+            if (config.apiServer.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                '${translate('API Server')}: ${config.apiServer}',
+                style: const TextStyle(fontSize: 13, color: Colors.grey),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
             const SizedBox(height: 8),
             Row(
               children: [

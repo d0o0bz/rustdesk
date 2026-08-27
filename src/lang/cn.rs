@@ -777,5 +777,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Check availability", "检测可用性"),
         ("ID Server Port", "ID 服务器端口"),
         ("Relay Server Port", "中继服务器端口"),
+        ("Key", ""),
     ].iter().cloned().collect();
 }

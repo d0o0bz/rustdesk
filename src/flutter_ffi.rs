@@ -3009,8 +3009,18 @@ pub fn main_add_server_config(
     id_port: i32,
     relay_server: String,
     relay_port: i32,
+    api_server: String,
+    key: String,
 ) -> String {
-    add_server_config(name, id_server, id_port, relay_server, relay_port)
+    add_server_config(
+        name,
+        id_server,
+        id_port,
+        relay_server,
+        relay_port,
+        api_server,
+        key,
+    )
 }
 
 pub fn main_update_server_config(
@@ -3020,8 +3030,19 @@ pub fn main_update_server_config(
     id_port: i32,
     relay_server: String,
     relay_port: i32,
+    api_server: String,
+    key: String,
 ) -> String {
-    update_server_config(id, name, id_server, id_port, relay_server, relay_port)
+    update_server_config(
+        id,
+        name,
+        id_server,
+        id_port,
+        relay_server,
+        relay_port,
+        api_server,
+        key,
+    )
 }
 
 pub fn main_delete_server_config(id: String) -> String {
