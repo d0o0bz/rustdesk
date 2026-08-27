@@ -62,6 +62,12 @@ class ServerConfigState extends ChangeNotifier {
   bool get loading => _loading;
   bool get autoSwitchEnabled => _autoSwitchEnabled;
 
+  /// 对所有配置并行触发可用性检测并回填状态。
+  Future<void> _checkAll() async {
+    if (_configs.isEmpty) return;
+    await Future.wait(_configs.map((c) => check(c.id)));
+  }
+
   /// 加载全部配置并刷新当前标记与自动开关。
   Future<void> load() async {
     _loading = true;
@@ -73,6 +79,7 @@ class ServerConfigState extends ChangeNotifier {
           .toList();
       _configs = list;
       _autoSwitchEnabled = await bind.mainGetAutoSwitchEnabled();
+      await _checkAll();
     } catch (e) {
       debugPrint('load server configs failed: $e');
       _configs = [];
