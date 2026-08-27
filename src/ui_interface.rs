@@ -1797,7 +1797,7 @@ fn server_config_to_json(config: &ServerConfig) -> serde_json::Value {
 
 pub fn get_all_server_configs() -> String {
     let configs = ConfigManager::get_all_configs();
-    let current_id = Config2::get().current_config_id;
+    let current_id = hbb_common::config::MultiServerStore::load().current_config_id;
     let arr: Vec<serde_json::Value> = configs
         .iter()
         .map(|c| {
