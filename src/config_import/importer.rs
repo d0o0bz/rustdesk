@@ -34,7 +34,9 @@ impl ConfigImporter {
         match InstallDirDetector::detect_toml_config() {
             Some(path) => {
                 log::info!("检测到 TOML 配置: {:?}", path);
-                Self::import_from_path(&path)
+                Self::import_from_path(&path)?;
+                backup_toml(&path);
+                Ok(())
             }
             None => {
                 log::info!("未检测到 TOML 配置文件");
@@ -80,8 +82,23 @@ impl ConfigImporter {
 fn is_source_stale(path: &Path) -> bool {
     let src_mtime = hbb_common::get_modified_time(path);
     let cfg_mtime = hbb_common::get_modified_time(&Config::file());
-    let exe_mtime = hbb_common::get_exe_time();
-    !(src_mtime > cfg_mtime && src_mtime < exe_mtime)
+    src_mtime <= cfg_mtime
+}
+
+fn backup_toml(path: &Path) {
+    let ts = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let mut target = path.with_file_name(format!("rustdesk.toml.bkp.{}", ts));
+    if target.exists() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        target = path.with_file_name(format!("rustdesk.toml.bkp.{}_{}", ts, nanos));
+    }
+    match std::fs::rename(path, &target) {
+        Ok(()) => log::info!("配置已备份为: {:?}", target),
+        Err(e) => log::warn!("配置备份重命名失败: {}", e),
+    }
 }
 
 #[cfg(test)]

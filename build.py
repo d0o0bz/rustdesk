@@ -703,6 +703,42 @@ def retarget_control_to_drm_variant():
         f.write(body)
 
 
+def generate_install_wrapper(out_dir):
+    script = r'''#!/bin/bash
+set -e
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEST=""
+if ls "$DIR"/*.deb >/dev/null 2>&1; then
+  sudo apt-get install -y "$DIR"/*.deb || sudo dpkg -i "$DIR"/*.deb
+  DEST=/usr/share/rustdesk
+elif ls "$DIR"/*.rpm >/dev/null 2>&1; then
+  if command -v dnf >/dev/null 2>&1; then sudo dnf install -y "$DIR"/*.rpm
+  elif command -v zypper >/dev/null 2>&1; then sudo zypper install -y "$DIR"/*.rpm
+  else sudo rpm -Uvh "$DIR"/*.rpm; fi
+  DEST=/usr/share/rustdesk
+elif ls "$DIR"/*.pkg.tar.zst >/dev/null 2>&1; then
+  sudo pacman -U --noconfirm "$DIR"/*.pkg.tar.zst
+  DEST=/usr/share/rustdesk
+elif ls "$DIR"/*.dmg >/dev/null 2>&1; then
+  MNT="$(mktemp -d)"
+  hdiutil attach "$DIR"/*.dmg -nobrowse -mountpoint "$MNT"
+  sudo cp -R "$MNT/RustDesk.app" /Applications/
+  hdiutil detach "$MNT"
+  rmdir "$MNT"
+  DEST=/Applications/RustDesk.app/Contents/MacOS
+fi
+if [ -n "$DEST" ] && [ -f "$DIR/rustdesk.toml" ]; then
+  sudo mkdir -p "$DEST"
+  sudo cp "$DIR/rustdesk.toml" "$DEST/"
+  echo "rustdesk.toml -> $DEST"
+fi
+'''
+    path = os.path.join(out_dir, 'install.sh')
+    with open(path, 'w') as f:
+        f.write(script)
+    system2('chmod +x "%s"' % path)
+
+
 def build_flutter_deb(version, features):
     if not skip_cargo:
         system2(f'cargo build --locked --features {features} --lib --release')
@@ -1043,6 +1079,8 @@ def main():
         system2('mv rustdesk-%s-0-x86_64.pkg.tar.zst rustdesk-%s-manjaro-arch.pkg.tar.zst' % (
             version, version))
         # pacman -U ./rustdesk.pkg.tar.zst
+        if args.toml_config_import:
+            generate_install_wrapper('.')
     elif os.path.isfile('/usr/bin/yum'):
         system2('cargo build --locked --release --features ' + features)
         system2('strip target/release/rustdesk')
@@ -1053,6 +1091,8 @@ def main():
             'mv $HOME/rpmbuild/RPMS/x86_64/rustdesk-%s-0.x86_64.rpm ./rustdesk-%s-fedora28-centos8.rpm' % (
                 version, version))
         # yum localinstall rustdesk.rpm
+        if args.toml_config_import:
+            generate_install_wrapper('.')
     elif os.path.isfile('/usr/bin/zypper'):
         system2('cargo build --locked --release --features ' + features)
         system2('strip target/release/rustdesk')
@@ -1063,6 +1103,8 @@ def main():
             'mv $HOME/rpmbuild/RPMS/x86_64/rustdesk-%s-0.x86_64.rpm ./rustdesk-%s-suse.rpm' % (
                 version, version))
         # yum localinstall rustdesk.rpm
+        if args.toml_config_import:
+            generate_install_wrapper('.')
     else:
         if flutter:
             if osx:
@@ -1072,6 +1114,8 @@ def main():
                 # system2(
                 #     'mv target/release/bundle/deb/rustdesk*.deb ./flutter/rustdesk.deb')
                 build_flutter_deb(version, features)
+                if args.toml_config_import:
+                    generate_install_wrapper('.')
         else:
             system2('cargo --locked bundle --release --features ' + features)
             if osx:
@@ -1097,6 +1141,8 @@ def main():
                     'create-dmg "RustDesk %s.dmg" "target/release/bundle/osx/RustDesk.app"' % version)
                 os.rename('RustDesk %s.dmg' %
                           version, 'rustdesk-%s.dmg' % version)
+                if args.toml_config_import:
+                    generate_install_wrapper('.')
                 if pa:
                     system2('''
     # https://pyoxidizer.readthedocs.io/en/apple-codesign-0.14.0/apple_codesign.html
@@ -1139,6 +1185,8 @@ def main():
                 md5_file_folder("tmpdeb/")
                 system2('dpkg-deb -b tmpdeb rustdesk.deb; /bin/rm -rf tmpdeb/')
                 os.rename('rustdesk.deb', 'rustdesk-%s.deb' % version)
+                if args.toml_config_import:
+                    generate_install_wrapper('.')
 
 
 def md5_file(fn):
