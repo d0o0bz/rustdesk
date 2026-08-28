@@ -101,6 +101,51 @@ cargo 的两类下载缓存都持久化到宿主机，避免每次重建容器�
 `run-flutter.sh` 接受任意额外参数透传给 `docker run`（如 `--memory`、`--cpus`）；镜像名可用
 `RUSTDESK_FLUTTER_IMAGE` 环境变量覆盖。
 
+### 快速编译检查：用 check-flutter.sh 运行（仅 cargo check）
+
+`run-flutter.sh` 会跑完整的 `build-flutter.sh`（子模块、pub get、bridge 代码生成、vcpkg、
+`cargo build`）。若你只改了 Rust 侧代码、想快速验证能否编译（如开发 `toml-config-import`
+功能时），可用 `docker/check-flutter.sh` 只跑 `cargo check`，省去 Flutter 端的耗时步骤。
+
+该脚本复刻了 `build-flutter.sh` 中 `cargo check` 所必需的**全部环境**，因此不会重蹈手动
+`cargo check` 因缺 vcpkg 头文件而失败的覆辙：
+
+- 容器内设置 `VCPKG_ROOT=/opt/vcpkg`，并把 `/opt/vcpkg/installed` 软链到
+  `/workspace/vcpkg_installed`（manifest 模式 vcpkg 安装目录），使 `magnum-opus` 等 crate
+  能通过 vcpkg 找到 `opus/opus_multistream.h` 等 native 头文件；
+- 设置 git `insteadOf` 代理（`gh-proxy.com`）、`CARGO_NET_GIT_FETCH_WITH_CLI=true`；
+- 挂载与 `run-flutter.sh` 完全一致的缓存目录（cargo git / registry / vcpkg downloads /
+  pub-cache），并设置 `CARGO_HOME` / `PUB_CACHE`。
+
+```bash
+# 默认：cargo check --features toml-config-import（会先 vcpkg install --triplet x64-linux）
+docker/check-flutter.sh
+
+# 已装过 vcpkg，跳过安装只做 check（复用 /workspace/vcpkg_installed）
+SKIP_VCPKG=1 docker/check-flutter.sh
+
+# 自定义 features
+CARGO_FEATURES="toml-config-import,hwcodec" docker/check-flutter.sh
+
+# 透传额外 docker run 参数（如限制内存）
+docker/check-flutter.sh --memory=16g
+```
+
+可选环境变量：
+
+- `CARGO_FEATURES`：传给 `cargo check --features` 的值，默认 `toml-config-import`。
+- `CARGO_CHECK_ARGS`：追加到 `cargo check` 的额外参数（如 `--lib`、`--all-targets`）。
+- `SKIP_VCPKG`：设为任意值跳过 `vcpkg install`（仅在 native 依赖已就绪时用，否则 check 会因
+  找不到头文件而失败；首次运行需留空以触发安装）。
+- `CARGO_GIT_CACHE` / `CARGO_REG_CACHE` / `VCPKG_DL_CACHE` / `PUB_CACHE`：同 `run-flutter.sh`，
+  覆盖各宿主机缓存目录。
+- `RUSTDESK_FLUTTER_IMAGE`：覆盖镜像名。
+
+> 注：vcpkg 通过 manifest 模式装到挂载树内的 `/workspace/vcpkg_installed`，因此该目录在多次
+> `docker run` 间持久保留，`SKIP_VCPKG=1` 后续可反复复用，无需每次重装。若 `vcpkg install`
+> 因 github tarball 下载失败（构建环境直连 github 不通），请先按"vcpkg downloads 缓存"小节
+> 预下载并放入 `docker/vcpkg-downloads/`，或确认该目录已同步到构建机。
+
 ### 步骤幂等（可重入）
 
 脚本对前 3 个步骤做了"已完成即跳过"的哨兵标记，标记文件统一存放在挂载源码树内的
