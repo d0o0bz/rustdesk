@@ -64,6 +64,7 @@ impl TomlConfig {
             && self.rendezvous_servers.is_empty()
     }
 
+    #[allow(dead_code)]
     pub fn version(&self) -> &str {
         &self.version
     }

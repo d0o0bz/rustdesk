@@ -5,7 +5,6 @@ pub enum ConfigImportError {
     TomlParseError(TomlParseError),
     PermissionDenied(String),
     StoreError(String),
-    Unknown(String),
 }
 
 impl std::fmt::Display for ConfigImportError {
@@ -16,7 +15,6 @@ impl std::fmt::Display for ConfigImportError {
             ConfigImportError::TomlParseError(e) => write!(f, "TOML 解析错误: {}", e),
             ConfigImportError::PermissionDenied(s) => write!(f, "权限不足: {}", s),
             ConfigImportError::StoreError(s) => write!(f, "配置存储错误: {}", s),
-            ConfigImportError::Unknown(s) => write!(f, "未知错误: {}", s),
         }
     }
 }

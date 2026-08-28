@@ -4,14 +4,12 @@ use super::error::TomlParseError;
 
 #[derive(Debug)]
 pub enum InstallDirError {
-    NotFound(String),
     ExePathError(String),
 }
 
 impl std::fmt::Display for InstallDirError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            InstallDirError::NotFound(s) => write!(f, "安装目录不存在: {}", s),
             InstallDirError::ExePathError(s) => write!(f, "无法获取可执行文件路径: {}", s),
         }
     }
