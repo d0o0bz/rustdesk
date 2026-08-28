@@ -42,6 +42,7 @@ class ServerConfigCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onCheck;
+  final VoidCallback onSetDefault;
 
   const ServerConfigCard({
     Key? key,
@@ -51,6 +52,7 @@ class ServerConfigCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onCheck,
+    required this.onSetDefault,
   }) : super(key: key);
 
   @override
@@ -123,6 +125,12 @@ class ServerConfigCard extends StatelessWidget {
                   ),
                 ],
                 const Spacer(),
+                if (!config.isDefault)
+                  TextButton.icon(
+                    icon: const Icon(Icons.star_outline, size: 18),
+                    label: Text(translate('Set as default')),
+                    onPressed: onSetDefault,
+                  ),
                 IconButton(
                   icon: const Icon(Icons.network_check, size: 18),
                   tooltip: translate('Check availability'),

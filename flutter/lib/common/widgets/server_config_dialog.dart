@@ -230,6 +230,15 @@ Future<void> showServerConfigManager(
                       },
                       onEdit: () => _showEditDialog(item),
                       onDelete: () => _delete(item),
+                      onSetDefault: () async {
+                        final err = await state.setDefault(item.id);
+                        if (err == null) {
+                          refresh();
+                          showToast(translate('Successful'));
+                        } else {
+                          showToast(err);
+                        }
+                      },
                       onCheck: () async {
                         final result = await state.check(item.id);
                         refresh();

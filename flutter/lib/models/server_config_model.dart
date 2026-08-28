@@ -46,7 +46,6 @@ class ServerConfigItem {
       key: json['key'] as String? ?? '',
       isDefault: json['is_default'] as bool? ?? false,
       isCurrent: json['is_current'] as bool? ?? false,
-      isAvailable: json['is_available'] as bool? ?? false,
       avgLatency: (json['avg_latency'] as num?)?.toInt(),
     );
   }
@@ -156,6 +155,16 @@ class ServerConfigState extends ChangeNotifier {
   /// 切换当前配置，成功返回 null，失败返回后端错误文案。
   Future<String?> switchTo(String id) async {
     final ret = await bind.mainSwitchServerConfig(id: id);
+    if (ret == 'ok') {
+      await load();
+      return null;
+    }
+    return ret;
+  }
+
+  /// 设为默认配置，成功返回 null，失败返回后端错误文案。
+  Future<String?> setDefault(String id) async {
+    final ret = await bind.mainSetDefaultServerConfig(id: id);
     if (ret == 'ok') {
       await load();
       return null;

@@ -761,6 +761,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Edit", ""),
         ("Use", ""),
         ("In use", ""),
+        ("Set as default", ""),
         ("Available", ""),
         ("Unavailable", ""),
         ("Latency", ""),

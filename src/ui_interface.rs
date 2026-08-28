@@ -1790,7 +1790,6 @@ fn server_config_to_json(config: &ServerConfig) -> serde_json::Value {
         "api_server": &config.api_server,
         "key": &config.key,
         "is_default": config.is_default,
-        "is_available": config.is_available,
         "avg_latency": config.avg_latency,
     })
 }
@@ -1910,6 +1909,13 @@ pub fn check_server_config(id: String) -> String {
             serde_json::to_string(&result).unwrap_or_default()
         }
         None => "null".to_string(),
+    }
+}
+
+pub fn set_default_server_config(id: String) -> String {
+    match ConfigManager::set_default_config(&id) {
+        Ok(()) => "ok".to_string(),
+        Err(e) => e.to_string(),
     }
 }
 

@@ -3053,6 +3053,10 @@ pub fn main_switch_server_config(id: String) -> String {
     switch_server_config(id)
 }
 
+pub fn main_set_default_server_config(id: String) -> String {
+    set_default_server_config(id)
+}
+
 pub fn main_check_server_config(id: String) -> String {
     check_server_config(id)
 }
