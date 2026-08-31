@@ -779,5 +779,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("ID Server Port", ""),
         ("Relay Server Port", ""),
         ("Key", ""),
+        ("Low power mode", ""),
+        ("Enable low-power mode on dual-GPU Macs", ""),
+        ("low_power_mode_tip", ""),
     ].iter().cloned().collect();
 }

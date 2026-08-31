@@ -780,5 +780,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("ID Server Port", "ID 伺服器連接埠"),
         ("Relay Server Port", "中繼伺服器連接埠"),
         ("Key", ""),
+        ("Low power mode", "低功耗模式"),
+        ("Enable low-power mode on dual-GPU Macs", "在雙顯卡 Mac 上啟用低功耗模式"),
+        ("low_power_mode_tip", "針對雙顯卡 Mac：透過降低擷取幀率與解析度並停用硬體編解碼，來減少發熱與耗電，避免喚醒獨立顯示卡。於新連線或重新啟動後生效，CPU 使用率會上升。"),
     ].iter().cloned().collect();
 }

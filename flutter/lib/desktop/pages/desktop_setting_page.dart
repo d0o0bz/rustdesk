@@ -415,6 +415,7 @@ class _GeneralState extends State<_General> {
         theme(),
         _Card(title: 'Language', children: [language()]),
         if (!isWeb) hwcodec(),
+        if (isMacOS) lowPowerMode(),
         if (!isWeb) audio(context),
         if (!isWeb) record(context),
         if (!isWeb) WaylandCard(),
@@ -703,6 +704,20 @@ class _GeneralState extends State<_General> {
         )
       ]),
     );
+  }
+
+  // dec: macOS 双显卡低功耗模式开关（本机端 option，新连接或重启后生效）。
+  Widget lowPowerMode() {
+    return _Card(title: 'Low power mode', children: [
+      Tooltip(
+        message: translate('low_power_mode_tip'),
+        child: _OptionCheckBox(
+          context,
+          'Enable low-power mode on dual-GPU Macs',
+          kOptionLowPowerMode,
+        ),
+      )
+    ]);
   }
 
   Widget audio(BuildContext context) {

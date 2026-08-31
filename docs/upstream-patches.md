@@ -49,6 +49,26 @@
 - **改动**：新增 `const String kOptionLowPowerMode = "low-power-mode";`。
 - **兼容性**：纯 additive 常量。
 
+### B4. 设置页低功耗开关（UI）
+
+- **文件**：`flutter/lib/desktop/pages/desktop_setting_page.dart`
+- **改动**：新增 `lowPowerMode()` 卡片（`isMacOS` 门控，仅 macOS 显示），内含绑定 `kOptionLowPowerMode` 的 `_OptionCheckBox`，并挂载到 General 标签页 `hwcodec()` 之后。
+- **目的**：把已在 Rust 侧实现的低功耗能力暴露为用户可自行开关的设置项。
+- **兼容性**：纯 additive 方法与一行挂载；其他平台不渲染。
+
+### B5. 低功耗时禁用硬件编解码
+
+- **文件**：`libs/scrap/src/common/codec.rs`
+- **改动**：`enable_hwcodec_option()` 内新增 `#[cfg(target_os = "macos")]` 分支，`Config::get_option("low-power-mode") == "Y"` 时返回 false。
+- **目的**：低功耗模式下禁用 VideoToolbox，避免硬件编解码唤醒独显。该函数同时门控编码器（服务端被远程）与解码器（`hwcodec.rs` 的 `HwRamDecoder::try_get`，客户端远程他人），故一处改动双向生效。
+- **兼容性**：仅新增 macOS 条件编译分支，其他平台逻辑完全不变；`enable-hwcodec` 原有开关语义保留。
+
+### 多语言 key
+
+- **文件**：`src/lang/template.rs` 及 `src/lang/*.rs`
+- **改动**：末尾各追加 `Low power mode`、`Enable low-power mode on dual-GPU Macs`、`low_power_mode_tip` 三个 key；`en.rs` 只补 `low_power_mode_tip` 的英文文案，`cn.rs` / `tw.rs` 提供中英对照翻译，其余语言留空（回退英文）。
+- **兼容性**：纯 additive 条目，不动任何既有 key。
+
 ## install_config_import 模块（TOML 配置导入）
 
 ### 新增独立模块（无上游修改）
@@ -130,6 +150,9 @@
 3. `src/server/video_service.rs` — 确认 `create_capturer` 的 macOS 分支结构未变；若上游重构，需重新挂载 `low-power-mode` 读取点。
 4. `libs/scrap/src/quartz/config.rs` 与 `common/quartz.rs` — 确认 `Config::low_power()` 与 `Capturer::new_with_config()` 仍在。
 5. `src/platform/macos.rs` — 确认 `apply_low_power_mode` 函数仍在。
+6. `flutter/lib/desktop/pages/desktop_setting_page.dart` — 确认 `lowPowerMode()` 卡片与其 General 挂载点仍在；若设置页重构，需重新挂载。
+7. `libs/scrap/src/common/codec.rs` — 确认 `enable_hwcodec_option()` 内的 macOS `low-power-mode` 分支仍在。
+8. `src/lang/template.rs` — 确认 `Low power mode`、`Enable low-power mode on dual-GPU Macs`、`low_power_mode_tip` 三个 key 仍在。
 6. `flutter/lib/consts.dart` — 确认 `kOptionLowPowerMode` 常量仍在。
 7. `src/lib.rs` — 确认 `#[cfg(feature = "toml-config-import")] mod config_import;` 仍在。
 8. `Cargo.toml` — 确认 `toml-config-import` feature 仍在。

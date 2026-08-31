@@ -852,6 +852,12 @@ pub fn enable_hwcodec_option() -> bool {
     use hbb_common::config::keys::OPTION_ENABLE_HWCODEC;
 
     if !cfg!(target_os = "ios") {
+        // dec: macOS 双显卡低功耗模式下禁用 VideoToolbox，
+        // 避免硬件编解码唤醒独立显卡（编码与解码均回落软件实现）。
+        #[cfg(target_os = "macos")]
+        if Config::get_option("low-power-mode") == "Y" {
+            return false;
+        }
         return option2bool(
             OPTION_ENABLE_HWCODEC,
             &Config::get_option(OPTION_ENABLE_HWCODEC),

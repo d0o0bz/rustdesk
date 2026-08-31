@@ -277,5 +277,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Your ip is blocked by the peer", "Your IP is blocked by the peer"),
         ("Delete server config tip", "Delete server config {name}?"),
         ("Key", ""),
+        ("low_power_mode_tip", "For Macs with dual GPUs: lowers heat and power consumption by reducing the capture frame rate and resolution and by disabling the hardware codec. Takes effect on new connections or after a restart. CPU usage will increase."),
     ].iter().cloned().collect();
 }
