@@ -115,6 +115,11 @@ impl RendezvousMediator {
 
     pub async fn start_all() {
         crate::test_nat_type();
+        // The connection is about to use whatever server the options name. Register it in the
+        // config list first, so a server configured through the single server settings is part
+        // of the list too instead of drifting away from it.
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        config::ServerConfigRepository::sync_from_active_options();
         if config::is_outgoing_only() {
             loop {
                 sleep(1.).await;

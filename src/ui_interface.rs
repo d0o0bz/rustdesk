@@ -1777,7 +1777,10 @@ mod tests {
 }
 
 // dec: 多配置支持 - 暴露给 Flutter UI 的 glue 层，薄封装 ConfigManager 等已有能力
-use hbb_common::config::{Config2, ConfigManager, ManualSwitcher, ServerConfig, ServerConfigRepository};
+use hbb_common::config::{
+    Config2, ConfigManager, ManualSwitcher, ServerConfig, ServerConfigRepository,
+    SERVER_OPTION_KEYS,
+};
 
 fn server_config_to_json(config: &ServerConfig) -> serde_json::Value {
     serde_json::json!({
@@ -1856,6 +1859,9 @@ pub fn update_server_config(
     api_server: String,
     key: String,
 ) -> String {
+    // Resolve before writing: once the address is edited the recorded id may no longer match
+    // the server the connection is on, so this is the only point where "is current" is known.
+    let is_current = ServerConfigRepository::current_id().as_deref() == Some(id.as_str());
     let mut config = match ServerConfigRepository::find_by_id(&id) {
         Some(c) => c,
         None => return "配置不存在".to_string(),
@@ -1880,14 +1886,34 @@ pub fn update_server_config(
     };
     config.key = if key.is_empty() { None } else { Some(key) };
     match ConfigManager::update_config(config) {
-        Ok(()) => "ok".to_string(),
+        Ok(()) => {
+            if is_current {
+                // Editing the server in use has to reach the options the connection reads,
+                // otherwise the list and the connection disagree until something switches.
+                if let Some(updated) = ServerConfigRepository::find_by_id(&id) {
+                    ServerConfigRepository::apply_current(&updated, &mut |k, v| set_option(k, v));
+                }
+            }
+            "ok".to_string()
+        }
         Err(e) => e.to_string(),
     }
 }
 
 pub fn delete_server_config(id: String) -> String {
+    let was_current = ServerConfigRepository::current_id().as_deref() == Some(id.as_str());
     match ConfigManager::delete_config(&id) {
-        Ok(()) => "ok".to_string(),
+        Ok(()) => {
+            if was_current {
+                // The server the connection is on is gone from the list. Drop it from the
+                // options as well, otherwise it stays in use while no longer being listed,
+                // which is exactly the drift the two way sync exists to prevent.
+                for key in SERVER_OPTION_KEYS {
+                    set_option(key.to_owned(), String::new());
+                }
+            }
+            "ok".to_string()
+        }
         Err(e) => e.to_string(),
     }
 }
