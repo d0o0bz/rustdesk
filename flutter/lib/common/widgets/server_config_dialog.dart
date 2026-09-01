@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
+import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/server_config_model.dart';
 
 import 'server_config_widgets.dart';
@@ -220,8 +221,16 @@ Future<void> showServerConfigManager(
                       config: item,
                       isCurrent: item.isCurrent,
                       onSwitch: () async {
+                        final oldApiServer = await bind.mainGetApiServer();
                         final err = await state.switchTo(item.id);
+                        final newApiServer = await bind.mainGetApiServer();
                         if (err == null) {
+                          // The session belongs to the previous api server.
+                          if (oldApiServer.isNotEmpty &&
+                              oldApiServer != newApiServer &&
+                              gFFI.userModel.isLogin) {
+                            gFFI.userModel.logOut(apiServer: oldApiServer);
+                          }
                           refresh();
                           showToast(translate('Successful'));
                         } else {

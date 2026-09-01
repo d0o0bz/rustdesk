@@ -134,6 +134,8 @@ impl RendezvousMediator {
         tokio::spawn(async move {
             direct_server(server_cloned).await;
         });
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        tokio::spawn(auto_switch_server_loop());
         #[cfg(target_os = "android")]
         let start_lan_listening = true;
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -904,6 +906,64 @@ async fn direct_server(server: ServerPtr) {
         } else {
             sleep(1.).await;
         }
+    }
+}
+
+// Only the service process runs `start_all`, and only it knows whether the rendezvous servers
+// are really reachable, so the failover decision lives here rather than in the ui process.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+async fn auto_switch_server_loop() {
+    use hbb_common::config::{AutoSwitcher, Config2};
+
+    const CHECK_INTERVAL: f32 = 15.;
+    const DOWN_ROUNDS: i32 = 3;
+    const COOL_DOWN: i64 = 30_000;
+    // `ONLINE` is still empty while the first registration round is in flight, so an early
+    // check would look like an outage.
+    const WARMUP: i64 = 60_000;
+
+    let start = Instant::now();
+    let mut down = 0;
+    let mut last_switch: Option<Instant> = None;
+    loop {
+        sleep(CHECK_INTERVAL).await;
+        if (start.elapsed().as_millis() as i64) < WARMUP {
+            continue;
+        }
+        // Also gives the freshly switched to server time to register before it is judged.
+        if last_switch
+            .map(|t| (t.elapsed().as_millis() as i64) < COOL_DOWN)
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        if config::option2bool("stop-service", &Config::get_option("stop-service"))
+            || !Config2::get().auto_switch_enabled
+        {
+            down = 0;
+            continue;
+        }
+        if config::get_online_state() > 0 {
+            down = 0;
+            continue;
+        }
+        down += 1;
+        if down < DOWN_ROUNDS {
+            continue;
+        }
+        match AutoSwitcher::try_switch().await {
+            Ok(Some(_)) => {
+                last_switch = Some(Instant::now());
+                RendezvousMediator::restart();
+            }
+            Ok(None) => log::warn!(
+                "Server is unreachable, but no alternative server config is reachable either"
+            ),
+            Err(err) => log::error!("Failed to switch server config: {err}"),
+        }
+        // Wait for a fresh round of checks rather than retrying every interval, which for a
+        // persistently empty candidate list would mean probing every 15s forever.
+        down = 0;
     }
 }
 

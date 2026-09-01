@@ -1796,7 +1796,7 @@ fn server_config_to_json(config: &ServerConfig) -> serde_json::Value {
 
 pub fn get_all_server_configs() -> String {
     let configs = ConfigManager::get_all_configs();
-    let current_id = hbb_common::config::MultiServerStore::load().current_config_id;
+    let current_id = ServerConfigRepository::current_id();
     let arr: Vec<serde_json::Value> = configs
         .iter()
         .map(|c| {
@@ -1893,13 +1893,18 @@ pub fn delete_server_config(id: String) -> String {
 }
 
 pub fn switch_server_config(id: String) -> String {
-    match ServerConfigRepository::find_by_id(&id) {
-        Some(config) => match ManualSwitcher::switch(&config) {
-            Ok(()) => "ok".to_string(),
-            Err(e) => e.to_string(),
-        },
-        None => "配置不存在".to_string(),
+    let config = match ServerConfigRepository::find_by_id(&id) {
+        Some(config) => config,
+        None => return "配置不存在".to_string(),
+    };
+    if let Err(e) = ManualSwitcher::switch(&config) {
+        return e.to_string();
     }
+    // ManualSwitcher only records the id. The connection reads these options, and it lives
+    // in the service process, so go through set_option, which pushes them over ipc and
+    // makes the service restart its rendezvous mediator.
+    ServerConfigRepository::apply_current(&config, &mut |k, v| set_option(k, v));
+    "ok".to_string()
 }
 
 pub fn check_server_config(id: String) -> String {
