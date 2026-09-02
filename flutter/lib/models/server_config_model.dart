@@ -172,6 +172,17 @@ class ServerConfigState extends ChangeNotifier {
     return ret;
   }
 
+  /// 调整优先级，newIndex 为 0 的位置由默认项占用。
+  /// 拖拽与上移下移复用同一后端接口，越界或移动默认项由后端拒绝（返回错误文案）。
+  Future<String?> move(String id, int newIndex) async {
+    final ret = await bind.mainMoveServerConfig(id: id, newIndex: newIndex);
+    if (ret == 'ok') {
+      await load();
+      return null;
+    }
+    return ret;
+  }
+
   /// 检测单个配置可用性，并把结果回填到列表，成功返回检测结果 Map，失败返回 null。
   Future<Map<String, dynamic>?> check(String id) async {
     try {

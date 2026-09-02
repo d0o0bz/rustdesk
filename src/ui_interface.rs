@@ -1950,6 +1950,15 @@ pub fn set_default_server_config(id: String) -> String {
     }
 }
 
+/// Reorder a config. `new_index` is its priority, 0 being the default's fixed position.
+/// Backend rejects moving the default or an out of range index, returning an error string.
+pub fn move_server_config(id: String, new_index: usize) -> String {
+    match ConfigManager::move_config(&id, new_index) {
+        Ok(()) => "ok".to_string(),
+        Err(e) => e.to_string(),
+    }
+}
+
 pub fn get_auto_switch_enabled() -> bool {
     Config2::get().auto_switch_enabled
 }

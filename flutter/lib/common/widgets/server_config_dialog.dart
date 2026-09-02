@@ -172,6 +172,17 @@ Future<void> showServerConfigManager(
       }
     }
 
+    Future<void> _move(String id, int newIndex) async {
+      final err = await state.move(id, newIndex);
+      if (err == null) {
+        refresh();
+        showToast(translate('Successful'));
+      } else {
+        showToast(err);
+        refresh();
+      }
+    }
+
     return CustomAlertDialog(
       title: Row(
         children: [
@@ -212,12 +223,23 @@ Future<void> showServerConfigManager(
               )
             else
               Flexible(
-                child: ListView.builder(
+                child: ReorderableListView.builder(
                   shrinkWrap: true,
+                  buildDefaultDragHandles: false,
                   itemCount: state.configs.length,
+                  onReorder: (oldIndex, newIndex) {
+                    // Index 0 is the default and is pinned, so it must never move.
+                    if (oldIndex <= 0 || newIndex <= 0) return;
+                    var target = newIndex;
+                    // ReorderableListView reports the target index after the removed item
+                    // would have shifted the tail, so pulling an item down needs a -1.
+                    if (target > oldIndex) target -= 1;
+                    final item = state.configs[oldIndex];
+                    _move(item.id, target);
+                  },
                   itemBuilder: (context, index) {
                     final item = state.configs[index];
-                    return ServerConfigCard(
+                    final card = ServerConfigCard(
                       config: item,
                       isCurrent: item.isCurrent,
                       onSwitch: () async {
@@ -225,7 +247,6 @@ Future<void> showServerConfigManager(
                         final err = await state.switchTo(item.id);
                         final newApiServer = await bind.mainGetApiServer();
                         if (err == null) {
-                          // The session belongs to the previous api server.
                           if (oldApiServer.isNotEmpty &&
                               oldApiServer != newApiServer &&
                               gFFI.userModel.isLogin) {
@@ -239,15 +260,6 @@ Future<void> showServerConfigManager(
                       },
                       onEdit: () => _showEditDialog(item),
                       onDelete: () => _delete(item),
-                      onSetDefault: () async {
-                        final err = await state.setDefault(item.id);
-                        if (err == null) {
-                          refresh();
-                          showToast(translate('Successful'));
-                        } else {
-                          showToast(err);
-                        }
-                      },
                       onCheck: () async {
                         final result = await state.check(item.id);
                         refresh();
@@ -255,6 +267,23 @@ Future<void> showServerConfigManager(
                             ? translate('Failed')
                             : translate('Successful'));
                       },
+                      onMoveUp: index <= 1
+                          ? null
+                          : () => _move(item.id, index - 1),
+                      onMoveDown: index >= state.configs.length - 1
+                          ? null
+                          : () => _move(item.id, index + 1),
+                    );
+                    // The default item is not wrapped in a drag listener, so it stays put
+                    // and the user cannot drag other items above it.
+                    return Container(
+                      key: Key(item.id),
+                      child: item.isDefault
+                          ? card
+                          : ReorderableDragStartListener(
+                              index: index,
+                              child: card,
+                            ),
                     );
                   },
                 ),

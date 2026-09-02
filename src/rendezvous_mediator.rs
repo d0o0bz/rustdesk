@@ -920,9 +920,9 @@ async fn direct_server(server: ServerPtr) {
 async fn auto_switch_server_loop() {
     use hbb_common::config::{AutoSwitcher, Config2};
 
-    const CHECK_INTERVAL: f32 = 15.;
+    const CHECK_INTERVAL: f32 = 12.;
     const DOWN_ROUNDS: i32 = 3;
-    const COOL_DOWN: i64 = 30_000;
+    const COOL_DOWN: i64 = 15_000;
     // `ONLINE` is still empty while the first registration round is in flight, so an early
     // check would look like an outage.
     const WARMUP: i64 = 60_000;

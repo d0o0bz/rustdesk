@@ -3057,6 +3057,10 @@ pub fn main_set_default_server_config(id: String) -> String {
     set_default_server_config(id)
 }
 
+pub fn main_move_server_config(id: String, new_index: usize) -> String {
+    move_server_config(id, new_index)
+}
+
 pub fn main_check_server_config(id: String) -> String {
     check_server_config(id)
 }

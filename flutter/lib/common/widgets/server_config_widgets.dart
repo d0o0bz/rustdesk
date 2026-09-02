@@ -42,7 +42,8 @@ class ServerConfigCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onCheck;
-  final VoidCallback onSetDefault;
+  final VoidCallback onMoveUp;
+  final VoidCallback onMoveDown;
 
   const ServerConfigCard({
     Key? key,
@@ -52,7 +53,8 @@ class ServerConfigCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onCheck,
-    required this.onSetDefault,
+    required this.onMoveUp,
+    required this.onMoveDown,
   }) : super(key: key);
 
   @override
@@ -114,23 +116,42 @@ class ServerConfigCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 8),
-            Row(
+            // 状态与操作区：窄屏时图标自动换行，杜绝溢出。默认项不提供上下移。
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 4,
+              runSpacing: 4,
               children: [
-                ServerStatusBadge(isAvailable: config.isAvailable),
-                if (config.avgLatency != null) ...[
-                  const SizedBox(width: 12),
-                  Text(
-                    '${translate('Latency')}: ${config.avgLatency}ms',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ServerStatusBadge(isAvailable: config.isAvailable),
+                    if (config.avgLatency != null) ...[
+                      const SizedBox(width: 12),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 160),
+                        child: Text(
+                          '${translate('Latency')}: ${config.avgLatency}ms',
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              const TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (!config.isDefault) ...[
+                  IconButton(
+                    icon: const Icon(Icons.arrow_upward, size: 18),
+                    tooltip: translate('Move up'),
+                    onPressed: onMoveUp,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.arrow_downward, size: 18),
+                    tooltip: translate('Move down'),
+                    onPressed: onMoveDown,
                   ),
                 ],
-                const Spacer(),
-                if (!config.isDefault)
-                  TextButton.icon(
-                    icon: const Icon(Icons.star_outline, size: 18),
-                    label: Text(translate('Set as default')),
-                    onPressed: onSetDefault,
-                  ),
                 IconButton(
                   icon: const Icon(Icons.network_check, size: 18),
                   tooltip: translate('Check availability'),
