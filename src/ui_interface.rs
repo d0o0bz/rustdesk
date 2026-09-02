@@ -1778,8 +1778,8 @@ mod tests {
 
 // dec: 多配置支持 - 暴露给 Flutter UI 的 glue 层，薄封装 ConfigManager 等已有能力
 use hbb_common::config::{
-    Config2, ConfigManager, ManualSwitcher, ServerConfig, ServerConfigRepository,
-    SERVER_OPTION_KEYS,
+    auto_switch_enabled, ConfigManager, ManualSwitcher, ServerConfig, ServerConfigRepository,
+    OPTION_AUTO_SWITCH_ENABLED, SERVER_OPTION_KEYS,
 };
 
 fn server_config_to_json(config: &ServerConfig) -> serde_json::Value {
@@ -1960,11 +1960,14 @@ pub fn move_server_config(id: String, new_index: usize) -> String {
 }
 
 pub fn get_auto_switch_enabled() -> bool {
-    Config2::get().auto_switch_enabled
+    auto_switch_enabled()
 }
 
 pub fn set_auto_switch_enabled(enabled: bool) {
-    let mut config2 = Config2::get();
-    config2.auto_switch_enabled = enabled;
-    Config2::set(config2);
+    // Goes through set_option instead of Config::set_option so that the value
+    // reaches the service process over ipc and survives a service restart.
+    set_option(
+        OPTION_AUTO_SWITCH_ENABLED.to_owned(),
+        if enabled { "Y" } else { "N" }.to_owned(),
+    );
 }

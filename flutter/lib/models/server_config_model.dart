@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -16,7 +17,9 @@ class ServerConfigItem {
   final String key;
   final bool isDefault;
   final bool isCurrent;
-  final bool isAvailable;
+
+  /// null 表示尚未检测，避免探测完成前整屏显示红色不可用。
+  final bool? isAvailable;
   final int? avgLatency;
 
   ServerConfigItem({
@@ -30,7 +33,7 @@ class ServerConfigItem {
     this.key = '',
     this.isDefault = false,
     this.isCurrent = false,
-    this.isAvailable = false,
+    this.isAvailable,
     this.avgLatency,
   });
 
@@ -78,7 +81,8 @@ class ServerConfigState extends ChangeNotifier {
           .toList();
       _configs = list;
       _autoSwitchEnabled = await bind.mainGetAutoSwitchEnabled();
-      await _checkAll();
+      // 探测放在后台：不可达主机要等满连接超时（Windows 上最长 3s/端点），不能阻塞弹窗打开。
+      unawaited(_checkAll());
     } catch (e) {
       debugPrint('load server configs failed: $e');
       _configs = [];

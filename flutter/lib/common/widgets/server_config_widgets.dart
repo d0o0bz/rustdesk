@@ -11,10 +11,11 @@ class ServerStatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color color;
-    final String label;
+    final String? label;
     if (isAvailable == null) {
+      // 未检测时只显示灰点，不显示文案，避免引入仅探测间隙才用到的翻译 key。
       color = MyTheme.darkGray;
-      label = translate('Not checked');
+      label = null;
     } else if (isAvailable!) {
       color = const Color(0xFF32bea6);
       label = translate('Available');
@@ -28,8 +29,10 @@ class ServerStatusBadge extends StatelessWidget {
         height: 8,
         decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       ),
-      const SizedBox(width: 4),
-      Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      if (label != null) ...[
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      ],
     ]);
   }
 }

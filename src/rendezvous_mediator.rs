@@ -918,11 +918,15 @@ async fn direct_server(server: ServerPtr) {
 // are really reachable, so the failover decision lives here rather than in the ui process.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 async fn auto_switch_server_loop() {
-    use hbb_common::config::{AutoSwitcher, Config2};
+    use hbb_common::config::AutoSwitcher;
 
     const CHECK_INTERVAL: f32 = 12.;
     const DOWN_ROUNDS: i32 = 3;
     const COOL_DOWN: i64 = 15_000;
+    // Preemption runs on its own, much slower cadence than the outage check, and requires
+    // consecutive confirmations so a flapping server cannot cause switch ping-pong.
+    const PREEMPT_CHECK_INTERVAL: i64 = 60_000;
+    const PREEMPT_ROUNDS: i32 = 2;
     // `ONLINE` is still empty while the first registration round is in flight, so an early
     // check would look like an outage.
     const WARMUP: i64 = 60_000;
@@ -930,6 +934,8 @@ async fn auto_switch_server_loop() {
     let start = Instant::now();
     let mut down = 0;
     let mut last_switch: Option<Instant> = None;
+    let mut last_preempt_check: Option<Instant> = None;
+    let mut preempt_rounds = 0;
     loop {
         sleep(CHECK_INTERVAL).await;
         if (start.elapsed().as_millis() as i64) < WARMUP {
@@ -943,13 +949,45 @@ async fn auto_switch_server_loop() {
             continue;
         }
         if config::option2bool("stop-service", &Config::get_option("stop-service"))
-            || !Config2::get().auto_switch_enabled
+            || !config::auto_switch_enabled()
         {
             down = 0;
             continue;
         }
         if config::get_online_state() > 0 {
             down = 0;
+            let due = last_preempt_check
+                .map(|t| t.elapsed().as_millis() as i64 >= PREEMPT_CHECK_INTERVAL)
+                .unwrap_or(true);
+            if due {
+                last_preempt_check = Some(Instant::now());
+                match AutoSwitcher::find_higher_priority().await {
+                    Ok(Some(config)) => {
+                        preempt_rounds += 1;
+                        if preempt_rounds >= PREEMPT_ROUNDS {
+                            log::info!(
+                                "Server config {} ({}) ranks higher and is reachable, \
+                                 switching back to it",
+                                config.name,
+                                config.id_server
+                            );
+                            match AutoSwitcher::apply(&config) {
+                                Ok(()) => {
+                                    last_switch = Some(Instant::now());
+                                    RendezvousMediator::restart();
+                                }
+                                Err(err) => log::error!("Failed to switch server config: {err}"),
+                            }
+                            preempt_rounds = 0;
+                        }
+                    }
+                    Ok(None) => preempt_rounds = 0,
+                    Err(err) => {
+                        log::error!("Failed to check higher priority server configs: {err}");
+                        preempt_rounds = 0;
+                    }
+                }
+            }
             continue;
         }
         down += 1;
