@@ -727,10 +727,10 @@ elif ls "$DIR"/*.dmg >/dev/null 2>&1; then
   rmdir "$MNT"
   DEST=/Applications/RustDesk.app/Contents/MacOS
 fi
-if [ -n "$DEST" ] && [ -f "$DIR/rustdesk.toml" ]; then
+if [ -n "$DEST" ] && [ -f "$DIR/rustdesk-config-import.toml" ]; then
   sudo mkdir -p "$DEST"
-  sudo cp "$DIR/rustdesk.toml" "$DEST/"
-  echo "rustdesk.toml -> $DEST"
+  sudo cp "$DIR/rustdesk-config-import.toml" "$DEST/"
+  echo "rustdesk-config-import.toml -> $DEST"
 fi
 '''
     path = os.path.join(out_dir, 'install.sh')

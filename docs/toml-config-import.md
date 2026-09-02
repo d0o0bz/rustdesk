@@ -1,6 +1,6 @@
 # TOML 配置导入（install_config_import）
 
-本组件在安装/启动时从安装目录读取 `rustdesk.toml`，转换为内部配置后持久化，支持企业批量部署的配置预置。
+本组件在安装/启动时从安装目录读取 `rustdesk-config-import.toml`，转换为内部配置后持久化，支持企业批量部署的配置预置。
 
 ## 启用方式
 
@@ -14,7 +14,7 @@ cargo build --features toml-config-import
 
 ## 配置文件规则
 
-- **文件名**：`rustdesk.toml`（固定）
+- **文件名**：`rustdesk-config-import.toml`（固定）
 - **位置**：应用程序安装目录下
 - **编码**：UTF-8
 - **大小上限**：1 MB
@@ -69,12 +69,15 @@ id_server = "rs1.rustdesk.com"
 id_port = 21116
 relay_server = "relay1.rustdesk.com"
 relay_port = 21117
+api_server = "api.rustdesk.com"
+key = "your_server_public_key"
 is_default = true
 
 [[rendezvous_servers]]
 name = "Backup"
 id_server = "rs2.rustdesk.com"
 relay_server = "relay2.rustdesk.com"
+key = "backup_server_public_key"
 
 [options]
 custom_resolution = "1920x1080"
@@ -107,16 +110,31 @@ custom_resolution = "1920x1080"
 | `display.disable_audio` | Boolean | `false` | 禁用音频 |
 | `display.disable_clipboard` | Boolean | `false` | 禁用剪贴板 |
 | `options.*` | String | — | 扩展选项（未知键记 WARNING 后写入） |
+| `rendezvous_servers[].id` | String | 自动生成 | 条目唯一标识。省略时自动生成 UUID；显式指定可在重复导入时稳定复用同一条目 |
 | `rendezvous_servers[].name` | String | `""` | 服务器显示名称 |
 | `rendezvous_servers[].id_server` | String | `""` | ID/中继服务器地址 |
 | `rendezvous_servers[].id_port` | Integer | `21116` | ID 服务器端口 |
 | `rendezvous_servers[].relay_server` | String? | `None` | 中继服务器地址 |
 | `rendezvous_servers[].relay_port` | Integer? | `21117` | 中继服务器端口 |
+| `rendezvous_servers[].api_server` | String? | `None` | API 服务器地址 |
+| `rendezvous_servers[].key` | String? | `None` | 服务器公钥，自建服务器必填，否则无法建立加密连接 |
 | `rendezvous_servers[].is_default` | Boolean | `false` | 是否默认服务器 |
 
 ### 多中继服务器
 
-使用 TOML 数组表 `[[rendezvous_servers]]` 定义多个中继服务器，映射到 `Config2.rendezvous_servers`。导入时按 `id` 合并：已存在则更新，否则追加。`id` 未指定时自动生成 UUID，`id_port`/`relay_port` 未指定时使用默认端口（21116/21117）。
+使用 TOML 数组表 `[[rendezvous_servers]]` 定义多个中继服务器，映射到 `MultiServerStore.rendezvous_servers`。`id_port`/`relay_port` 未指定时使用默认端口（21116/21117）。
+
+#### 条目标识（id）
+
+`id` 省略时自动生成 UUID。重复导入同一份配置时，合并按 **`id` 优先、`id_server` 兜底** 定位已有条目并更新它，因此不会因每次生成新的 UUID 而产生重复条目；更新时会**保留库里原有的 `id`**，避免 `current_config_id` 与既有默认标记失效。若希望跨版本稳定指向同一条目，建议在配置里显式写死 `id`。
+
+#### 默认项选取
+
+- 某条 `is_default = true` 时，该条为默认（同时其余条目被取消默认，保持"唯一默认"）。
+- **全部条目 `is_default` 均为 false 或省略，且单服务器配置（`custom-rendezvous-server`）为空时，自动取第一个 `rendezvous_servers` 条目为默认。**
+- 单服务器配置非空时（顶层写了 `rendezvous_server`，或原本已有配置），**不改动默认项**——单服务器设置具有更高优先级。
+
+若选中默认项时单服务器配置为空，导入会把该条目写入单服务器的 `custom-rendezvous-server`/`relay-server`/`api-server`/`key` 四个选项，使连接**立即切换到该服务器**；否则条目只是入库，连接仍沿用原有单服务器设置。
 
 ### 类型转换规则
 
@@ -131,7 +149,7 @@ custom_resolution = "1920x1080"
 rustdesk --import-toml-config
 
 # 从指定路径导入
-rustdesk --import-toml-config /path/to/rustdesk.toml
+rustdesk --import-toml-config /path/to/rustdesk-config-import.toml
 
 # JSON 格式输出
 rustdesk --import-toml-config --json
@@ -149,29 +167,29 @@ rustdesk --import-toml-config --json
 
 ## 自动导入
 
-启用 feature 后，应用每次启动时会在 `core_main()` 初始化阶段自动调用 `ConfigImporter::import_from_install_dir()`，检测安装目录下的 `rustdesk.toml` 并导入。幂等性通过修改时间比较保证：仅当源文件比现有配置新（`src_mtime > cfg_mtime`）才会重新导入，否则跳过。首次安装时配置文件不存在，必然触发导入。
+启用 feature 后，应用每次启动时会在 `core_main()` 初始化阶段自动调用 `ConfigImporter::import_from_install_dir()`，检测安装目录下的 `rustdesk-config-import.toml` 并导入。幂等性通过修改时间比较保证：仅当源文件比现有配置新（`src_mtime > cfg_mtime`）才会重新导入，否则跳过。首次安装时配置文件不存在，必然触发导入。
 
 ### 首次导入后自动备份
 
-`import_from_install_dir()` 导入成功后，会将安装目录下的 `rustdesk.toml` 重命名为 `rustdesk.toml.bkp.YYYYMMDD_HHMMSS`（同秒冲突时追加纳秒后缀），避免后续启动重复检测。重命名为 best-effort：若当前进程对安装目录无写权限（如普通用户启动的 GUI 进程），重命名失败仅记录 `warn` 日志，不影响导入结果，源文件留置但靠时间窗比较不会重复导入。手动 `--import-toml-config` 导入不触发重命名。
+`import_from_install_dir()` 导入成功后，会将安装目录下的 `rustdesk-config-import.toml` 重命名为 `rustdesk-config-import.toml.bkp.YYYYMMDD_HHMMSS`（同秒冲突时追加纳秒后缀），避免后续启动重复检测。重命名为 best-effort：若当前进程对安装目录无写权限（如普通用户启动的 GUI 进程），重命名失败仅记录 `warn` 日志，不影响导入结果，源文件留置但靠时间窗比较不会重复导入。手动 `--import-toml-config` 导入不触发重命名。
 
 ## 一键部署
 
-将 `rustdesk.toml` 与安装包放在同一目录，安装时自动将其放入安装目录，首次启动即导入。需以 `--toml-config-import` feature 构建。
+将 `rustdesk-config-import.toml` 与安装包放在同一目录，安装时自动将其放入安装目录，首次启动即导入。需以 `--toml-config-import` feature 构建。
 
 ### Windows MSI
 
-把 `rustdesk.toml` 与 `rustdesk-*.msi` 放同一目录，双击 MSI 安装即可。安装末尾 `CopyTomlConfig` 自定义动作读取 MSI 同目录的 `rustdesk.toml` 并复制到安装目录（`INSTALLFOLDER_INNER`，即注册表 `InstallLocation`）。复制失败静默忽略。
+把 `rustdesk-config-import.toml` 与 `rustdesk-*.msi` 放同一目录，双击 MSI 安装即可。安装末尾 `CopyTomlConfig` 自定义动作读取 MSI 同目录的 `rustdesk-config-import.toml` 并复制到安装目录（`INSTALLFOLDER_INNER`，即注册表 `InstallLocation`）。复制失败静默忽略。
 
 ### Linux / macOS
 
-`build.py` 在启用 `--toml-config-import` 时，生成 deb/rpm/pacman/dmg 同时输出一个 `install.sh`。分发时将 `install.sh`、安装包、`rustdesk.toml` 放同一目录，运行：
+`build.py` 在启用 `--toml-config-import` 时，生成 deb/rpm/pacman/dmg 同时输出一个 `install.sh`。分发时将 `install.sh`、安装包、`rustdesk-config-import.toml` 放同一目录，运行：
 
 ```bash
 bash install.sh
 ```
 
-脚本自动识别包类型（deb/rpm/pkg.tar.zst/dmg）安装，随后把同目录的 `rustdesk.toml` 复制到安装目录。各包管理器对应安装目录：
+脚本自动识别包类型（deb/rpm/pkg.tar.zst/dmg）安装，随后把同目录的 `rustdesk-config-import.toml` 复制到安装目录。各包管理器对应安装目录：
 
 | 包类型 | 安装命令 | 安装目录 |
 |--------|---------|---------|
@@ -184,7 +202,7 @@ bash install.sh
 
 ### 安装目录检测
 
-首次启动时 `InstallDirDetector` 按以下顺序检测安装目录下的 `rustdesk.toml`：
+首次启动时 `InstallDirDetector` 按以下顺序检测安装目录下的 `rustdesk-config-import.toml`：
 
 | 平台 | 候选路径 |
 |------|---------|

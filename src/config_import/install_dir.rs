@@ -34,7 +34,7 @@ impl InstallDirDetector {
                 return None;
             }
         };
-        let toml_path = dir.join("rustdesk.toml");
+        let toml_path = dir.join("rustdesk-config-import.toml");
         if toml_path.is_file() && validate_path_safety(&toml_path).is_ok() {
             Some(toml_path)
         } else {
@@ -142,13 +142,13 @@ mod tests {
 
     #[test]
     fn test_validate_path_safety_normal() {
-        let path = Path::new("/usr/bin/rustdesk/rustdesk.toml");
+        let path = Path::new("/usr/bin/rustdesk/rustdesk-config-import.toml");
         assert!(validate_path_safety(path).is_ok());
     }
 
     #[test]
     fn test_validate_path_safety_traversal() {
-        let path = Path::new("/usr/bin/../etc/rustdesk.toml");
+        let path = Path::new("/usr/bin/../etc/rustdesk-config-import.toml");
         assert!(matches!(
             validate_path_safety(path),
             Err(TomlParseError::PathSecurityError(_))

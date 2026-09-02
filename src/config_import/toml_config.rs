@@ -135,6 +135,10 @@ pub struct TomlServerEntry {
     #[serde(default)]
     pub relay_port: Option<i32>,
     #[serde(default)]
+    pub api_server: Option<String>,
+    #[serde(default)]
+    pub key: Option<String>,
+    #[serde(default)]
     pub is_default: bool,
 }
 
@@ -230,6 +234,8 @@ id_server = "rs1.rustdesk.com"
 id_port = 21116
 relay_server = "relay1.rustdesk.com"
 relay_port = 21117
+api_server = "api1.rustdesk.com"
+key = "pubkey1"
 is_default = true
 
 [[rendezvous_servers]]
@@ -246,7 +252,16 @@ relay_server = "relay2.rustdesk.com"
             cfg.rendezvous_servers[0].relay_server.as_deref(),
             Some("relay1.rustdesk.com")
         );
+        assert_eq!(
+            cfg.rendezvous_servers[0].api_server.as_deref(),
+            Some("api1.rustdesk.com")
+        );
+        assert_eq!(cfg.rendezvous_servers[0].key.as_deref(), Some("pubkey1"));
         assert!(cfg.rendezvous_servers[0].is_default);
+        assert!(
+            cfg.rendezvous_servers[1].key.is_none(),
+            "key stays unset when the file omits it"
+        );
         assert_eq!(cfg.rendezvous_servers[1].name, "Server 2");
         assert_eq!(cfg.rendezvous_servers[1].id_server, "rs2.rustdesk.com");
         assert!(!cfg.rendezvous_servers[1].is_default);

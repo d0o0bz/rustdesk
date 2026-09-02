@@ -1108,7 +1108,7 @@ UINT __stdcall CopyTomlConfig(
         goto LExit;
     }
 
-    if (FAILED(StringCchCopyW(srcToml, ARRAYSIZE(srcToml), msiDir)) || !PathAppendW(srcToml, L"rustdesk.toml"))
+    if (FAILED(StringCchCopyW(srcToml, ARRAYSIZE(srcToml), msiDir)) || !PathAppendW(srcToml, L"rustdesk-config-import.toml"))
     {
         WcaLog(LOGMSG_STANDARD, "CopyTomlConfig: failed to build src toml path, skipping.");
         hr = S_OK;
@@ -1117,12 +1117,12 @@ UINT __stdcall CopyTomlConfig(
 
     if (!PathFileExistsW(srcToml))
     {
-        WcaLog(LOGMSG_STANDARD, "CopyTomlConfig: no rustdesk.toml next to MSI, skipping.");
+        WcaLog(LOGMSG_STANDARD, "CopyTomlConfig: no rustdesk-config-import.toml next to MSI, skipping.");
         hr = S_OK;
         goto LExit;
     }
 
-    if (FAILED(StringCchCopyW(dstToml, ARRAYSIZE(dstToml), installFolder)) || !PathAppendW(dstToml, L"rustdesk.toml"))
+    if (FAILED(StringCchCopyW(dstToml, ARRAYSIZE(dstToml), installFolder)) || !PathAppendW(dstToml, L"rustdesk-config-import.toml"))
     {
         WcaLog(LOGMSG_STANDARD, "CopyTomlConfig: failed to build dst toml path, skipping.");
         hr = S_OK;

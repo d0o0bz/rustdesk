@@ -134,6 +134,14 @@ fn to_server_config(entry: &TomlServerEntry) -> ServerConfig {
     if let Some(p) = entry.relay_port {
         sc.relay_port = Some(p);
     }
+    // Guarded so that omitting the field keeps whatever the stored entry already has; the
+    // merge replaces the whole entry, so an unconditional write would clear a stored key.
+    if let Some(a) = &entry.api_server {
+        sc.api_server = Some(a.clone());
+    }
+    if let Some(k) = &entry.key {
+        sc.key = Some(k.clone());
+    }
     sc.is_default = entry.is_default;
     sc
 }
@@ -233,6 +241,8 @@ id_server = "rs1.rustdesk.com"
 id_port = 21116
 relay_server = "relay1.rustdesk.com"
 relay_port = 21117
+api_server = "api1.rustdesk.com"
+key = "pubkey1"
 is_default = true
 
 [[rendezvous_servers]]
@@ -249,9 +259,38 @@ id_server = "rs2.rustdesk.com"
             mapped.rendezvous_servers[0].relay_server.as_deref(),
             Some("relay1.rustdesk.com")
         );
+        assert_eq!(
+            mapped.rendezvous_servers[0].api_server.as_deref(),
+            Some("api1.rustdesk.com")
+        );
+        assert_eq!(
+            mapped.rendezvous_servers[0].key.as_deref(),
+            Some("pubkey1"),
+            "the server public key has to reach the stored config"
+        );
         assert!(mapped.rendezvous_servers[0].is_default);
         assert_eq!(mapped.rendezvous_servers[1].name, "Backup");
         assert_eq!(mapped.rendezvous_servers[1].id_server, "rs2.rustdesk.com");
         assert!(!mapped.rendezvous_servers[1].id.is_empty());
+    }
+
+    #[test]
+    fn test_server_id_generated_when_omitted() {
+        let content = "[[rendezvous_servers]]\nid_server = \"rs.example.com\"\n";
+        let cfg: TomlConfig = hbb_common::toml::from_str(content).unwrap();
+        let mapped = FieldMapper::map_to_internal_config(cfg);
+        assert!(
+            !mapped.rendezvous_servers[0].id.is_empty(),
+            "an omitted id falls back to a generated uuid"
+        );
+        assert!(mapped.rendezvous_servers[0].key.is_none());
+    }
+
+    #[test]
+    fn test_server_id_kept_when_given() {
+        let content = "[[rendezvous_servers]]\nid = \"b9915408\"\nid_server = \"rs.example.com\"\n";
+        let cfg: TomlConfig = hbb_common::toml::from_str(content).unwrap();
+        let mapped = FieldMapper::map_to_internal_config(cfg);
+        assert_eq!(mapped.rendezvous_servers[0].id, "b9915408");
     }
 }
