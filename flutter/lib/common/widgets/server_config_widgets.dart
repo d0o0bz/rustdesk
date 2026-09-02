@@ -42,8 +42,8 @@ class ServerConfigCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onCheck;
-  final VoidCallback onMoveUp;
-  final VoidCallback onMoveDown;
+  final VoidCallback? onMoveUp;
+  final VoidCallback? onMoveDown;
 
   const ServerConfigCard({
     Key? key,
@@ -53,8 +53,8 @@ class ServerConfigCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onCheck,
-    required this.onMoveUp,
-    required this.onMoveDown,
+    this.onMoveUp,
+    this.onMoveDown,
   }) : super(key: key);
 
   @override
