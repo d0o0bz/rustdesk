@@ -19,5 +19,8 @@
 		<CustomAction Id="RemoveAmyuniIdd" DllEntry="RemoveAmyuniIdd" Impersonate="no" Execute="deferred" Return="ignore" BinaryRef="Custom_Actions_Dll"/>
 		<CustomAction Id="InstallPrinter" DllEntry="InstallPrinter" Impersonate="no" Execute="deferred" Return="ignore" BinaryRef="Custom_Actions_Dll"/>
 		<CustomAction Id="UninstallPrinter" DllEntry="UninstallPrinter" Impersonate="no" Execute="deferred" Return="ignore" BinaryRef="Custom_Actions_Dll"/>
+		<!-- Runs as SYSTEM but launches the import in each logged-in user's session,
+				 so the config lands in the real user's profile, not SYSTEM's. -->
+		<CustomAction Id="ImportTomlConfig" DllEntry="ImportTomlConfig" Impersonate="no" Execute="deferred" Return="ignore" BinaryRef="Custom_Actions_Dll"/>
 	</Fragment>
 </Wix>

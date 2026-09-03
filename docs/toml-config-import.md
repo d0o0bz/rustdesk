@@ -174,6 +174,22 @@ msiexec /i rustdesk-1.4.9-x86_64.msi ADDTOPATH=1 /qn
 
 勾选状态写入注册表（`HKCR\$(RegKeyRoot)\ADDTOPATH`），升级或修改安装时会保留。注意：**已打开的终端不会自动获得新 PATH**，MSI 广播 `WM_SETTINGCHANGE` 后需新开终端。
 
+## Windows 安装器自动导入
+
+双击 MSI 安装时，安装器会在 `InstallFiles` 之后自动查找**与 MSI 同目录**的 `rustdesk-config-import.toml`，找到则在**每个已登录用户会话**中执行导入：
+
+```
+RustDesk.exe --import-toml-config "<MSI 所在目录>\rustdesk-config-import.toml"
+```
+
+说明：
+
+- 配置写入**登录用户**的 `%APPDATA%\RustDesk\config`，而不是安装器 SYSTEM 身份的配置——这是通过 `WTSQueryUserToken` + `CreateProcessAsUser` 在用户会话中启动导入实现的（控制台会话和活动 RDP 会话都会处理，多用户登录时每个用户各导入一份）。
+- 未找到 toml、无活动用户会话或导入失败都**只记日志、不中断安装**；安装日志中搜索 `ImportTomlConfig` 可查看细节。
+- toml 不会被复制或删除，导入是幂等的（按条目 `id` 合并，见上文）。
+- 该步骤仅在全新安装和升级时执行，卸载时不执行。
+- 若 MSI 同目录没有 toml，仍可用命令行手动导入（见上文「命令行用法」与「PATH 选项」）。
+
 ## Linux / macOS
 
 `--toml-config-import` 构建仍会生成 `install.sh`，但它只负责安装包本身，**不再复制 toml**——安装目录已不被扫描，复制过去也不会被读取。

@@ -31,6 +31,9 @@
 		<CustomAction Id="TryDeleteStartupShortcut.SetParam" Return="check" Property="ShortcutName" Value="$(var.Product) Tray" />
 		<CustomAction Id="RemoveAmyuniIdd.SetParam" Return="check" Property="RemoveAmyuniIdd" Value="[INSTALLFOLDER_INNER]" />
 		<CustomAction Id="InstallPrinter.SetParam" Return="check" Property="InstallPrinter" Value="[INSTALLFOLDER_INNER]" />
+		<!-- <msi full path>|<installed exe full path>|<toml file name>
+				 The toml is looked up in the same directory as the MSI. -->
+		<CustomAction Id="ImportTomlConfig.SetParam" Return="check" Property="ImportTomlConfig" Value="[OriginalDatabase]|[INSTALLFOLDER_INNER]$(var.Product).exe|$(var.ProductLower)-config-import.toml" />
 		<InstallExecuteSequence>
 
 			<Custom Action="SetPropertyIsServiceRunning" After="InstallInitialize" Condition="Installed" />
@@ -69,6 +72,13 @@
 			<!-- Remote printer also works on Win8.1 in my test. -->
 			<Custom Action="InstallPrinter" Before="InstallFinalize" Condition="VersionNT &gt;= 603 AND (PRINTER = 1 OR PRINTER = &quot;Y&quot; OR PRINTER = &quot;y&quot;)" />
 			<Custom Action="InstallPrinter.SetParam" Before="InstallPrinter" Condition="VersionNT &gt;= 603" />
+
+			<!-- Import rustdesk-config-import.toml (next to the MSI) into the logged-in
+					 user's config. Runs after InstallFiles so the exe is on disk. Runs on
+					 fresh install and upgrade, never on uninstall. Missing toml / no active
+					 user session is logged and skipped by the action itself. -->
+			<Custom Action="ImportTomlConfig" After="InstallFiles" Condition="NOT (Installed AND REMOVE AND NOT UPGRADINGPRODUCTCODE)"/>
+			<Custom Action="ImportTomlConfig.SetParam" Before="ImportTomlConfig" Condition="NOT (Installed AND REMOVE AND NOT UPGRADINGPRODUCTCODE)"/>
 
 			<!--Workaround of "fire:FirewallException". If Outbound="Yes" or Outbound="true", the following error occurs.-->
 			<!--ExecFirewallExceptions: Error 0x80070057: failed to add app to the authorized apps list-->
