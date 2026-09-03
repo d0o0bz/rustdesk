@@ -4,7 +4,6 @@ use hbb_common::config::{Config, MultiServerStore, ServerConfig, ServerConfigRep
 
 use super::error::ConfigImportError;
 use super::field_mapper::{FieldMapper, MappedConfig};
-use super::install_dir::InstallDirDetector;
 use super::toml_config::TomlConfig;
 use super::toml_parser::TomlConfigParser;
 
@@ -15,7 +14,7 @@ impl ConfigImporter {
         if !path.is_file() {
             return Err(ConfigImportError::TomlConfigNotFound);
         }
-        super::install_dir::validate_path_safety(path)?;
+        super::path_safety::validate_path_safety(path)?;
         if is_source_stale(path) {
             log::info!("配置文件未更新，跳过导入");
             return Ok(());
@@ -28,21 +27,6 @@ impl ConfigImporter {
         let mapped = FieldMapper::map_to_internal_config(toml_config);
         Self::merge_and_store(&mapped)?;
         Ok(())
-    }
-
-    pub fn import_from_install_dir() -> Result<(), ConfigImportError> {
-        match InstallDirDetector::detect_toml_config() {
-            Some(path) => {
-                log::info!("检测到 TOML 配置: {:?}", path);
-                Self::import_from_path(&path)?;
-                backup_toml(&path);
-                Ok(())
-            }
-            None => {
-                log::info!("未检测到 TOML 配置文件");
-                Ok(())
-            }
-        }
     }
 
     fn merge_and_store(mapped: &MappedConfig) -> Result<(), ConfigImportError> {
@@ -88,6 +72,12 @@ impl ConfigImporter {
                     }
                 }
             }
+            // Hand the result to every process. `store.save` alone is not enough: it stays
+            // quiet while the shared option is still empty, and reading back through
+            // `MultiServerStore::load` would hand over that option rather than the list just
+            // written, so the service would stay on its own single entry copy and the ui would
+            // keep showing a list an earlier publish had shadowed.
+            let _ = MultiServerStore::publish_from_file_if_owner();
         }
         Ok(())
     }
@@ -156,22 +146,6 @@ fn is_source_stale(path: &Path) -> bool {
     src_mtime <= cfg_mtime
 }
 
-fn backup_toml(path: &Path) {
-    let ts = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
-    let mut target = path.with_file_name(format!("rustdesk-config-import.toml.bkp.{}", ts));
-    if target.exists() {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        target = path.with_file_name(format!("rustdesk-config-import.toml.bkp.{}_{}", ts, nanos));
-    }
-    match std::fs::rename(path, &target) {
-        Ok(()) => log::info!("配置已备份为: {:?}", target),
-        Err(e) => log::warn!("配置备份重命名失败: {}", e),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,11 +155,6 @@ mod tests {
         let path = std::path::Path::new("/nonexistent/rustdesk_test_import.toml");
         let res = ConfigImporter::import_from_path(path);
         assert!(matches!(res, Err(ConfigImportError::TomlConfigNotFound)));
-    }
-
-    #[test]
-    fn test_import_from_install_dir_no_panic() {
-        let _ = ConfigImporter::import_from_install_dir();
     }
 
     fn server(id: &str, id_server: &str, is_default: bool) -> ServerConfig {

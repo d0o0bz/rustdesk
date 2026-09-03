@@ -1,6 +1,5 @@
 #[derive(Debug)]
 pub enum ConfigImportError {
-    InstallDirNotFound(String),
     TomlConfigNotFound,
     TomlParseError(TomlParseError),
     PermissionDenied(String),
@@ -10,7 +9,6 @@ pub enum ConfigImportError {
 impl std::fmt::Display for ConfigImportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConfigImportError::InstallDirNotFound(s) => write!(f, "安装目录不存在: {}", s),
             ConfigImportError::TomlConfigNotFound => write!(f, "TOML 配置文件不存在"),
             ConfigImportError::TomlParseError(e) => write!(f, "TOML 解析错误: {}", e),
             ConfigImportError::PermissionDenied(s) => write!(f, "权限不足: {}", s),

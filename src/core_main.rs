@@ -33,9 +33,6 @@ pub fn core_main() -> Option<Vec<String>> {
         return None;
     }
     crate::load_custom_client();
-    // dec: TOML配置导入
-    #[cfg(feature = "toml-config-import")]
-    hbb_common::allow_err!(crate::config_import::ConfigImporter::import_from_install_dir());
     #[cfg(windows)]
     if !crate::platform::windows::bootstrap() {
         // return None to terminate the process
@@ -740,6 +737,11 @@ pub fn core_main() -> Option<Vec<String>> {
         }
     }
     //_async_logger_holder.map(|x| x.flush());
+    // Reaching here means the process goes on to run the gui, so it is the one that owns the
+    // config list the user edits. Every earlier `return None` belongs to a process that
+    // terminates instead, the service and the command line runs among them, and none of those
+    // may publish, see `PUBLISH_ALLOWED`.
+    config::MultiServerStore::allow_publish();
     #[cfg(feature = "flutter")]
     return Some(flutter_args);
     #[cfg(not(feature = "flutter"))]
@@ -784,9 +786,13 @@ fn run_toml_import_from_args(args: &[String]) -> ! {
             path = Some(std::path::PathBuf::from(a));
         }
     }
+    // A deliberate import run in the user's own context, so it is allowed to publish the list
+    // it produces. The service process never reaches this, see `PUBLISH_ALLOWED`.
+    config::MultiServerStore::allow_publish();
+    // The install dir is no longer scanned, so the path has to come from the command line.
     let result = match path {
         Some(p) => ConfigImporter::import_from_path(&p),
-        None => ConfigImporter::import_from_install_dir(),
+        None => Err(ConfigImportError::TomlConfigNotFound),
     };
     let (code, message) = match result {
         Ok(()) => (0i32, "配置导入成功".to_string()),

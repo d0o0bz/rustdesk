@@ -727,10 +727,12 @@ elif ls "$DIR"/*.dmg >/dev/null 2>&1; then
   rmdir "$MNT"
   DEST=/Applications/RustDesk.app/Contents/MacOS
 fi
-if [ -n "$DEST" ] && [ -f "$DIR/rustdesk-config-import.toml" ]; then
-  sudo mkdir -p "$DEST"
-  sudo cp "$DIR/rustdesk-config-import.toml" "$DEST/"
-  echo "rustdesk-config-import.toml -> $DEST"
+# The install dir is no longer scanned for rustdesk-config-import.toml, so nothing is copied
+# there either. The import has to run in the user's own context, never under sudo, or the
+# config would land in root's profile instead of the user's.
+if [ -n "$DEST" ]; then
+  echo "Installed. To import a server config, run as the user that will use the app:"
+  echo "  \"$DEST/rustdesk\" --import-toml-config /path/to/rustdesk-config-import.toml"
 fi
 '''
     path = os.path.join(out_dir, 'install.sh')

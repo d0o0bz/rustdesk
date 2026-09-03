@@ -73,8 +73,8 @@
 
 ### 新增独立模块（无上游修改）
 
-- **文件**：`src/config_import.rs` 及 `src/config_import/{error,toml_config,toml_parser,install_dir,field_mapper,importer}.rs`
-- **改动**：新增配置导入组件，含 TOML 解析、字段映射、安装目录检测、合并存储。
+- **文件**：`src/config_import.rs` 及 `src/config_import/{error,toml_config,toml_parser,path_safety,field_mapper,importer}.rs`
+- **改动**：新增配置导入组件，含 TOML 解析、字段映射、路径安全校验、合并存储；导入仅经命令行 `--import-toml-config` 触发，安装目录不再被扫描。
 - **兼容性**：纯新增模块，由 `#[cfg(feature = "toml-config-import")]` 门控，默认不启用，对上游零侵入。
 
 ### 上游文件修改

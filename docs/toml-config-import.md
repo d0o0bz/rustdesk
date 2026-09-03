@@ -1,6 +1,6 @@
 # TOML 配置导入（install_config_import）
 
-本组件在安装/启动时从安装目录读取 `rustdesk-config-import.toml`，转换为内部配置后持久化，支持企业批量部署的配置预置。
+本组件通过命令行读取 `rustdesk-config-import.toml`，转换为内部配置后持久化，支持企业批量部署的配置预置。
 
 ## 启用方式
 
@@ -15,18 +15,10 @@ cargo build --features toml-config-import
 ## 配置文件规则
 
 - **文件名**：`rustdesk-config-import.toml`（固定）
-- **位置**：应用程序安装目录下
+- **位置**：任意，由命令行参数指定
 - **编码**：UTF-8
 - **大小上限**：1 MB
 - **格式**：TOML v1.0.0
-
-### 跨平台安装目录检测顺序
-
-| 平台 | 候选路径（按优先级） |
-|------|---------------------|
-| Windows | 注册表 `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\RustDesk\InstallLocation` → 可执行文件所在目录 |
-| macOS | `/Applications/RustDesk.app/Contents/MacOS/` → 可执行文件所在目录 |
-| Linux | `/usr/bin/rustdesk/` → `/opt/rustdesk/` → `$XDG_DATA_DIRS` 下 `rustdesk/` → 可执行文件所在目录 |
 
 ## 配置文件示例
 
@@ -145,15 +137,14 @@ custom_resolution = "1920x1080"
 ## 命令行用法
 
 ```bash
-# 从安装目录自动检测并导入
-rustdesk --import-toml-config
-
 # 从指定路径导入
 rustdesk --import-toml-config /path/to/rustdesk-config-import.toml
 
 # JSON 格式输出
-rustdesk --import-toml-config --json
+rustdesk --import-toml-config /path/to/rustdesk-config-import.toml --json
 ```
+
+路径必填：安装目录不再被扫描，省略路径会返回退出码 3。
 
 ### 退出码
 
@@ -165,47 +156,32 @@ rustdesk --import-toml-config --json
 | 3 | 配置文件不存在 |
 | 4 | 未知错误 |
 
-## 自动导入
+## Windows 安装器 PATH 选项
 
-启用 feature 后，应用每次启动时会在 `core_main()` 初始化阶段自动调用 `ConfigImporter::import_from_install_dir()`，检测安装目录下的 `rustdesk-config-import.toml` 并导入。幂等性通过修改时间比较保证：仅当源文件比现有配置新（`src_mtime > cfg_mtime`）才会重新导入，否则跳过。首次安装时配置文件不存在，必然触发导入。
+MSI 安装界面在「Create desktop icon」下方提供 **Add to PATH（command line usage）** 勾选项，勾选后安装目录会被追加到**系统 PATH**（`Part="last"`，不覆盖已有值；卸载时自动移除）。默认不勾选。
 
-### 首次导入后自动备份
+勾选后可在任意目录直接运行：
 
-`import_from_install_dir()` 导入成功后，会将安装目录下的 `rustdesk-config-import.toml` 重命名为 `rustdesk-config-import.toml.bkp.YYYYMMDD_HHMMSS`（同秒冲突时追加纳秒后缀），避免后续启动重复检测。重命名为 best-effort：若当前进程对安装目录无写权限（如普通用户启动的 GUI 进程），重命名失败仅记录 `warn` 日志，不影响导入结果，源文件留置但靠时间窗比较不会重复导入。手动 `--import-toml-config` 导入不触发重命名。
-
-## 一键部署
-
-将 `rustdesk-config-import.toml` 与安装包放在同一目录，安装时自动将其放入安装目录，首次启动即导入。需以 `--toml-config-import` feature 构建。
-
-### Windows MSI
-
-把 `rustdesk-config-import.toml` 与 `rustdesk-*.msi` 放同一目录，双击 MSI 安装即可。安装末尾 `CopyTomlConfig` 自定义动作读取 MSI 同目录的 `rustdesk-config-import.toml` 并复制到安装目录（`INSTALLFOLDER_INNER`，即注册表 `InstallLocation`）。复制失败静默忽略。
-
-### Linux / macOS
-
-`build.py` 在启用 `--toml-config-import` 时，生成 deb/rpm/pacman/dmg 同时输出一个 `install.sh`。分发时将 `install.sh`、安装包、`rustdesk-config-import.toml` 放同一目录，运行：
-
-```bash
-bash install.sh
+```powershell
+RustDesk --import-toml-config .\rustdesk-config-import.toml
 ```
 
-脚本自动识别包类型（deb/rpm/pkg.tar.zst/dmg）安装，随后把同目录的 `rustdesk-config-import.toml` 复制到安装目录。各包管理器对应安装目录：
+静默部署时用命令行参数控制，无需交互：
 
-| 包类型 | 安装命令 | 安装目录 |
-|--------|---------|---------|
-| deb | `apt-get install` / `dpkg -i` | `/usr/share/rustdesk/` |
-| rpm | `dnf` / `zypper` / `rpm -Uvh` | `/usr/share/rustdesk/` |
-| pacman | `pacman -U` | `/usr/share/rustdesk/` |
-| dmg | `hdiutil` + `cp -R` | `/Applications/RustDesk.app/Contents/MacOS/` |
+```powershell
+msiexec /i rustdesk-1.4.9-x86_64.msi ADDTOPATH=1 /qn
+```
 
-> 注：Linux 下 `dpkg`/`apt` 不把 deb 源路径传给 `postinst`，无法在 maintainer 脚本里检测 deb 同目录的 toml，故采用外层 `install.sh` 绕过。
+勾选状态写入注册表（`HKCR\$(RegKeyRoot)\ADDTOPATH`），升级或修改安装时会保留。注意：**已打开的终端不会自动获得新 PATH**，MSI 广播 `WM_SETTINGCHANGE` 后需新开终端。
 
-### 安装目录检测
+## Linux / macOS
 
-首次启动时 `InstallDirDetector` 按以下顺序检测安装目录下的 `rustdesk-config-import.toml`：
+`--toml-config-import` 构建仍会生成 `install.sh`，但它只负责安装包本身，**不再复制 toml**——安装目录已不被扫描，复制过去也不会被读取。
 
-| 平台 | 候选路径 |
-|------|---------|
-| Windows | 注册表 `InstallLocation` → 可执行文件所在目录 |
-| macOS | `/Applications/RustDesk.app/Contents/MacOS/` → 可执行文件所在目录 |
-| Linux | `/usr/bin/rustdesk/` → `/opt/rustdesk/` → `$XDG_DATA_DIRS` 下 `rustdesk/` → 可执行文件所在目录 |
+导入必须在**登录用户**身份下执行（不要用 sudo，否则会写进 root 的配置而非用户配置）：
+
+```bash
+rustdesk --import-toml-config /path/to/rustdesk-config-import.toml
+```
+
+`install.sh` 安装完成后会打印上述用法提示。
