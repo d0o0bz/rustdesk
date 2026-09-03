@@ -1357,7 +1357,7 @@ fn adopt_server_options_from_service(options: &HashMap<String, String>) {
     }
     let _suppress = SuppressDefaultPromotion::enter();
     for k in SERVER_OPTION_KEYS {
-        if let Some(value) = options.get(*k) {
+        if let Some(value) = options.get(k) {
             Config::set_option(k.to_owned(), value.clone());
         }
     }
