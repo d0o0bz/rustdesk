@@ -197,11 +197,13 @@ Future<void> showServerConfigManager(
       // Raises the cap the dialog framework puts on content width; its default
       // of 500 would otherwise clamp the content below its intended width.
       contentBoxConstraints: const BoxConstraints(maxWidth: 575),
-      content: ConstrainedBox(
-        // Keeps the whole dialog under 850 high: the title and the actions bar
-        // take about 176 of it, so the content is capped at 670 and the list
-        // scrolls instead of stretching the dialog.
-        constraints: const BoxConstraints(maxHeight: 670),
+      content: AnimatedBuilder(
+        animation: state,
+        builder: (context, _) => ConstrainedBox(
+          // Keeps the whole dialog under 850 high: the title and the actions bar
+          // take about 176 of it, so the content is capped at 670 and the list
+          // scrolls instead of stretching the dialog.
+          constraints: const BoxConstraints(maxHeight: 670),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -296,6 +298,7 @@ Future<void> showServerConfigManager(
               ),
           ],
         ),
+      ),
       ),
       actions: [
         dialogButton('Close', onPressed: () => close(), isOutline: true),

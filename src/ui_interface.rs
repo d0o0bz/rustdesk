@@ -1338,6 +1338,32 @@ pub fn get_login_device_info_json() -> String {
     serde_json::to_string(&get_login_device_info()).unwrap_or("{}".to_string())
 }
 
+/// Adopt the server options the service reports as the ones in use.
+///
+/// The service switches server on its own when the current one goes down, and on Windows
+/// nothing carries that back to this process: `sync_and_watch_config_dir` is macOS and Linux
+/// only. Without this the dialog keeps marking the server the connection already left as the
+/// one in use. A failover must not re-rank the list, so the same suppression a local switch
+/// uses is held while writing.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn adopt_server_options_from_service(options: &HashMap<String, String>) {
+    let in_use = match options.get(OPTION_CUSTOM_RENDEZVOUS_SERVER) {
+        Some(v) if !v.trim().is_empty() => v.clone(),
+        // Empty means the service runs without a custom server, not that it switched to none.
+        _ => return,
+    };
+    if Config::get_option(OPTION_CUSTOM_RENDEZVOUS_SERVER) == in_use {
+        return;
+    }
+    let _suppress = SuppressDefaultPromotion::enter();
+    for k in SERVER_OPTION_KEYS {
+        if let Some(value) = options.get(*k) {
+            Config::set_option(k.to_owned(), value.clone());
+        }
+    }
+    log::info!("Adopted the server in use from the service process: {in_use}");
+}
+
 // notice: avoiding create ipc connection repeatedly,
 // because windows named pipe has serious memory leak issue.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -1356,6 +1382,7 @@ async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedReceiver<ipc:
     loop {
         if let Ok(mut c) = ipc::connect(1000, "").await {
             let mut timer = crate::rustdesk_interval(time::interval(time::Duration::from_secs(1)));
+            let mut published_server_configs = false;
             loop {
                 tokio::select! {
                     res = c.next() => {
@@ -1373,6 +1400,7 @@ async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedReceiver<ipc:
                                 UI_STATUS.lock().unwrap().mouse_time = v;
                             }
                             Ok(Some(ipc::Data::Options(Some(v)))) => {
+                                adopt_server_options_from_service(&v);
                                 *OPTIONS.lock().unwrap() = v;
                                 *OPTION_SYNCED.lock().unwrap() = true;
                             }
@@ -1430,6 +1458,19 @@ async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedReceiver<ipc:
                         allow_err!(c.send(&data).await);
                     }
                     _ = timer.tick() => {
+                        // The service may well have started before this process, and the only
+                        // way it learns the config list is the shared option, so push it once
+                        // per connection. Sent on the connection already open rather than
+                        // through ipc::set_options, which would start a second runtime from
+                        // inside this one.
+                        if !published_server_configs {
+                            published_server_configs = true;
+                            if let Some(json) = MultiServerStore::load().publish() {
+                                let mut options = OPTIONS.lock().unwrap().clone();
+                                options.insert(OPTION_MULTI_SERVER_STORE.to_owned(), json);
+                                c.send(&ipc::Data::Options(Some(options))).await.ok();
+                            }
+                        }
                         c.send(&ipc::Data::OnlineStatus(None)).await.ok();
                         c.send(&ipc::Data::Options(None)).await.ok();
                         c.send(&ipc::Data::Config(("id".to_owned(), None))).await.ok();
@@ -1778,8 +1819,9 @@ mod tests {
 
 // dec: 多配置支持 - 暴露给 Flutter UI 的 glue 层，薄封装 ConfigManager 等已有能力
 use hbb_common::config::{
-    auto_switch_enabled, ConfigManager, ManualSwitcher, ServerConfig, ServerConfigRepository,
-    OPTION_AUTO_SWITCH_ENABLED, SERVER_OPTION_KEYS,
+    auto_switch_enabled, ConfigManager, ManualSwitcher, MultiServerStore, ServerConfig,
+    ServerConfigRepository, SuppressDefaultPromotion, OPTION_AUTO_SWITCH_ENABLED,
+    OPTION_MULTI_SERVER_STORE, SERVER_OPTION_KEYS,
 };
 
 fn server_config_to_json(config: &ServerConfig) -> serde_json::Value {
@@ -1818,6 +1860,20 @@ pub fn get_current_server_config() -> String {
     }
 }
 
+/// Share the config list with the service process.
+///
+/// The service owns the connection and is what fails over when the server goes down, but the
+/// list lives in this process' own config dir, which on Windows the service can never read. So
+/// the list travels as an option instead: `set_option` pushes it over ipc, the same channel the
+/// auto switch toggle and a manual switch already use. Without this the service only ever knows
+/// the server currently in use and has nothing to fail over to.
+pub fn publish_server_configs() {
+    let store = MultiServerStore::load();
+    if let Some(json) = store.publish() {
+        set_option(OPTION_MULTI_SERVER_STORE.to_owned(), json);
+    }
+}
+
 pub fn add_server_config(
     name: String,
     id_server: String,
@@ -1844,7 +1900,10 @@ pub fn add_server_config(
         config.key = Some(key);
     }
     match ConfigManager::add_config(config) {
-        Ok(()) => "ok".to_string(),
+        Ok(()) => {
+            publish_server_configs();
+            "ok".to_string()
+        }
         Err(e) => e.to_string(),
     }
 }
@@ -1894,6 +1953,7 @@ pub fn update_server_config(
                     ServerConfigRepository::apply_current(&updated, &mut |k, v| set_option(k, v));
                 }
             }
+            publish_server_configs();
             "ok".to_string()
         }
         Err(e) => e.to_string(),
@@ -1912,6 +1972,7 @@ pub fn delete_server_config(id: String) -> String {
                     set_option(key.to_owned(), String::new());
                 }
             }
+            publish_server_configs();
             "ok".to_string()
         }
         Err(e) => e.to_string(),
@@ -1930,6 +1991,7 @@ pub fn switch_server_config(id: String) -> String {
     // in the service process, so go through set_option, which pushes them over ipc and
     // makes the service restart its rendezvous mediator.
     ServerConfigRepository::apply_current(&config, &mut |k, v| set_option(k, v));
+    publish_server_configs();
     "ok".to_string()
 }
 
@@ -1945,7 +2007,10 @@ pub fn check_server_config(id: String) -> String {
 
 pub fn set_default_server_config(id: String) -> String {
     match ConfigManager::set_default_config(&id) {
-        Ok(()) => "ok".to_string(),
+        Ok(()) => {
+            publish_server_configs();
+            "ok".to_string()
+        }
         Err(e) => e.to_string(),
     }
 }
@@ -1954,7 +2019,10 @@ pub fn set_default_server_config(id: String) -> String {
 /// Backend rejects moving the default or an out of range index, returning an error string.
 pub fn move_server_config(id: String, new_index: usize) -> String {
     match ConfigManager::move_config(&id, new_index) {
-        Ok(()) => "ok".to_string(),
+        Ok(()) => {
+            publish_server_configs();
+            "ok".to_string()
+        }
         Err(e) => e.to_string(),
     }
 }
