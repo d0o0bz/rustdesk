@@ -17,7 +17,7 @@
 		<Property Id="DESKTOPSHORTCUTS" Value="1" Secure="yes"></Property>
 		<Property Id="STARTUPSHORTCUTS" Value="1" Secure="yes"></Property>
 		<Property Id="PRINTER" Secure="yes"></Property>
-		<Property Id="ADDTOPATH" Secure="yes"></Property>
+		<Property Id="ADDTOPATH" Value="1" Secure="yes"></Property>
 
 		<!-- These properties get set from either the command line, bundle or registry value,
 				 if set they update the properties above with their value. -->

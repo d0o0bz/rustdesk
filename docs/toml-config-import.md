@@ -158,7 +158,7 @@ rustdesk --import-toml-config /path/to/rustdesk-config-import.toml --json
 
 ## Windows 安装器 PATH 选项
 
-MSI 安装界面在「Create desktop icon」下方提供 **Add to PATH（command line usage）** 勾选项，勾选后安装目录会被追加到**系统 PATH**（`Part="last"`，不覆盖已有值；卸载时自动移除）。默认不勾选。
+MSI 安装界面在「Create desktop icon」下方提供 **Add to PATH（command line usage）** 勾选项，勾选后安装目录会被追加到**系统 PATH**（`Part="last"`，不覆盖已有值；卸载时自动移除）。**默认勾选**。
 
 勾选后可在任意目录直接运行：
 
