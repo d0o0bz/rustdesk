@@ -14,6 +14,7 @@
 
 #include "pch.h"
 #include "./Common.h"
+#include <strutil.h>
 
 #include <wtsapi32.h>
 #include <userenv.h>
@@ -116,6 +117,9 @@ LExit:
 //   2. InstallFiles
 //   3. ImportTomlConfig      <-- Here, the exe and every dependency are on disk by now.
 //   4. InstallFinalize
+//
+// All locals are declared at routine scope without initializers that a `goto`
+// could skip (the WiX WcaUtil convention uses `goto LExit`).
 UINT __stdcall ImportTomlConfig(
     __in MSIHANDLE hInstall)
 {
@@ -124,7 +128,15 @@ UINT __stdcall ImportTomlConfig(
 
     LPWSTR pwzData = NULL;
     PWTS_SESSION_INFOW pSessions = NULL;
+    LPWSTR pwzSep1 = NULL;
+    LPWSTR pwzSep2 = NULL;
+    LPCWSTR msiPath = NULL;
+    LPCWSTR exePath = NULL;
+    LPCWSTR tomlFileName = NULL;
+    LPCWSTR pwzLastSep = NULL;
+    WCHAR tomlPath[2048] = { 0 };
     DWORD sessionCount = 0;
+    bool importedAny = false;
 
     hr = WcaInitialize(hInstall, "ImportTomlConfig");
     ExitOnFailure(hr, "Failed to initialize");
@@ -134,17 +146,17 @@ UINT __stdcall ImportTomlConfig(
 
     // Parse `<msi full path>|<installed exe full path>|<toml file name>`.
     // '|' never appears in Windows paths, so it is safe as a separator.
-    LPWSTR pwzSep1 = wcschr(pwzData, L'|');
-    LPWSTR pwzSep2 = (pwzSep1 == NULL) ? NULL : wcschr(pwzSep1 + 1, L'|');
+    pwzSep1 = wcschr(pwzData, L'|');
+    pwzSep2 = (pwzSep1 == NULL) ? NULL : wcschr(pwzSep1 + 1, L'|');
     if (pwzSep1 == NULL || pwzSep2 == NULL) {
         WcaLog(LOGMSG_STANDARD, "ImportTomlConfig: unexpected CustomActionData: %ls", pwzData);
         goto LExit;
     }
     *pwzSep1 = L'\0';
     *pwzSep2 = L'\0';
-    LPCWSTR msiPath = pwzData;
-    LPCWSTR exePath = pwzSep1 + 1;
-    LPCWSTR tomlFileName = pwzSep2 + 1;
+    msiPath = pwzData;
+    exePath = pwzSep1 + 1;
+    tomlFileName = pwzSep2 + 1;
 
     WcaLog(LOGMSG_STANDARD, "ImportTomlConfig: msi: %ls", msiPath);
     WcaLog(LOGMSG_STANDARD, "ImportTomlConfig: exe: %ls", exePath);
@@ -152,8 +164,8 @@ UINT __stdcall ImportTomlConfig(
 
     // The toml file is looked up next to the MSI.
     {
-        LPCWSTR pwzLastSep = NULL;
-        for (LPCWSTR p = msiPath + wcslen(msiPath); p > msiPath; p--) {
+        LPCWSTR p = NULL;
+        for (p = msiPath + wcslen(msiPath); p > msiPath; p--) {
             if (*(p - 1) == L'\\' || *(p - 1) == L'/') {
                 pwzLastSep = p - 1;
                 break;
@@ -164,7 +176,6 @@ UINT __stdcall ImportTomlConfig(
             goto LExit;
         }
 
-        WCHAR tomlPath[2048] = { 0 };
         hr = StringCchPrintfW(tomlPath, ARRAYSIZE(tomlPath), L"%.*ls%ls", (int)(pwzLastSep - msiPath + 1), msiPath, tomlFileName);
         ExitOnFailure(hr, "ImportTomlConfig: failed to compose the toml path");
 
@@ -185,7 +196,6 @@ UINT __stdcall ImportTomlConfig(
             goto LExit;
         }
 
-        bool importedAny = false;
         for (DWORD i = 0; i < sessionCount; ++i) {
             if (pSessions[i].State != WTSActive) {
                 continue;
