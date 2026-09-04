@@ -34,7 +34,7 @@ use hbb_common::anyhow;
 use hbb_common::{
     allow_err, bail, bytes,
     bytes_codec::BytesCodec,
-    config::{self, keys::OPTION_ALLOW_WEBSOCKET, Config, Config2},
+    config::{self, keys::OPTION_ALLOW_WEBSOCKET, Config, Config2, OPTION_MULTI_SERVER_STORE},
     futures::StreamExt as _,
     futures_util::sink::SinkExt,
     log, password_security as password, timeout,
@@ -1820,10 +1820,26 @@ pub async fn get_rendezvous_server(ms_timeout: u64) -> (String, Vec<String>) {
     }
 }
 
+/// Keep this process' own server config list when taking over an option map from the peer.
+///
+/// Every process keeps the list in its own `RustDeskmulti_config.toml`, and publishing is the
+/// only thing meant to hand one over. A copy riding along inside the peer's option map belongs to
+/// that peer's file, and `MultiServerStore::load` prefers the option over the file, so adopting
+/// it hides every config this process has on disk behind a list that came from somewhere else.
+fn keep_own_server_configs(options: &mut HashMap<String, String>) {
+    let own = Config::get_option(OPTION_MULTI_SERVER_STORE);
+    if own.is_empty() {
+        options.remove(OPTION_MULTI_SERVER_STORE);
+    } else {
+        options.insert(OPTION_MULTI_SERVER_STORE.to_owned(), own);
+    }
+}
+
 async fn get_options_(ms_timeout: u64) -> ResultType<HashMap<String, String>> {
     let mut c = connect(ms_timeout, "").await?;
     c.send(&Data::Options(None)).await?;
-    if let Some(Data::Options(Some(value))) = c.next_timeout(ms_timeout).await? {
+    if let Some(Data::Options(Some(mut value))) = c.next_timeout(ms_timeout).await? {
+        keep_own_server_configs(&mut value);
         Config::set_options(value.clone());
         Ok(value)
     } else {
@@ -1859,7 +1875,10 @@ pub fn set_option(key: &str, value: &str) {
 }
 
 #[tokio::main(flavor = "current_thread")]
-pub async fn set_options(value: HashMap<String, String>) -> ResultType<()> {
+pub async fn set_options(mut value: HashMap<String, String>) -> ResultType<()> {
+    // The map comes from the cache the peer filled, so it carries the peer's list rather than
+    // this process' own; what goes out and what lands here have to be ours.
+    keep_own_server_configs(&mut value);
     let _nat = CheckTestNatType::new();
     if let Ok(mut c) = connect(1000, "").await {
         c.send(&Data::Options(Some(value.clone()))).await?;
