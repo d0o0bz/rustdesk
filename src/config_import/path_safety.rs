@@ -1,30 +1,21 @@
-use std::path::Path;
+use std::path::{Component, Path};
 
 use super::error::TomlParseError;
 
-/// Reject paths that must never be treated as a config to import.
+/// Refuse a path that steps out of the directory it was aimed at.
 ///
-/// The path comes straight from the command line, so a `..` segment or a sensitive system file
-/// has to be refused before anything is read from it.
+/// The path comes straight from the command line, so leaving the directory has to be caught
+/// before anything is read. Whole components rather than a search for `..` in the string,
+/// which reads a perfectly ordinary `my..app` directory as an escape attempt. There is no list
+/// of protected files to go with it either: without resolving the path such a list only
+/// matches the one spelling it happens to know, and a file that is not valid TOML to begin
+/// with gives nothing away.
 pub(crate) fn validate_path_safety(path: &Path) -> Result<(), TomlParseError> {
-    let path_str = path.to_string_lossy();
-    if path_str.contains("..") {
+    if path.components().any(|c| c == Component::ParentDir) {
         return Err(TomlParseError::PathSecurityError(format!(
-            "路径包含非法跳转: {}",
-            path_str
+            "路径包含上级目录跳转: {}",
+            path.display()
         )));
-    }
-    #[cfg(unix)]
-    {
-        let sensitive = ["/etc/shadow", "/etc/passwd"];
-        for s in sensitive {
-            if path_str == s {
-                return Err(TomlParseError::PathSecurityError(format!(
-                    "敏感系统文件: {}",
-                    path_str
-                )));
-            }
-        }
     }
     Ok(())
 }
@@ -48,13 +39,10 @@ mod tests {
         ));
     }
 
-    #[cfg(unix)]
     #[test]
-    fn test_validate_path_safety_sensitive() {
-        let path = Path::new("/etc/passwd");
-        assert!(matches!(
-            validate_path_safety(path),
-            Err(TomlParseError::PathSecurityError(_))
-        ));
+    fn test_validate_path_safety_keeps_dots_in_a_name() {
+        // `..` inside a name has nothing to do with leaving the directory.
+        let path = Path::new("/opt/my..app/rustdesk..config.toml");
+        assert!(validate_path_safety(path).is_ok());
     }
 }

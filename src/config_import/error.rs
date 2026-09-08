@@ -4,6 +4,7 @@ pub enum ConfigImportError {
     TomlParseError(TomlParseError),
     PermissionDenied(String),
     StoreError(String),
+    InvalidServerConfig(String),
 }
 
 impl std::fmt::Display for ConfigImportError {
@@ -13,6 +14,7 @@ impl std::fmt::Display for ConfigImportError {
             ConfigImportError::TomlParseError(e) => write!(f, "TOML 解析错误: {}", e),
             ConfigImportError::PermissionDenied(s) => write!(f, "权限不足: {}", s),
             ConfigImportError::StoreError(s) => write!(f, "配置存储错误: {}", s),
+            ConfigImportError::InvalidServerConfig(s) => write!(f, "服务器配置无效: {}", s),
         }
     }
 }
@@ -36,6 +38,7 @@ pub enum TomlParseError {
     FileSizeExceeded { max: u64, actual: u64 },
     EncodingError,
     PathSecurityError(String),
+    UnsupportedVersion { found: String, supported: String },
 }
 
 impl std::fmt::Display for TomlParseError {
@@ -52,6 +55,11 @@ impl std::fmt::Display for TomlParseError {
             }
             TomlParseError::EncodingError => write!(f, "编码错误: 期望 UTF-8 编码"),
             TomlParseError::PathSecurityError(s) => write!(f, "路径安全错误: {}", s),
+            TomlParseError::UnsupportedVersion { found, supported } => write!(
+                f,
+                "不支持的配置版本: 文件为 {}, 当前支持 {}",
+                found, supported
+            ),
         }
     }
 }

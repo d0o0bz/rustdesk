@@ -149,6 +149,26 @@
 - **改动**：`template.rs` 末尾追加 19 条 key（`Edit`、`Use`、`In use`、`Available`、`Unavailable`、`Latency`、`Checking...`、`Required`、`Multiple server config`、`Auto switch server`、`Add server config`、`Edit server config`、`Delete server config`、`Delete server config tip`、`No server config`、`Not checked`、`Check availability`、`ID Server Port`、`Relay Server Port`）；`en.rs` 只补有英文文案差异的项，`cn.rs` / `tw.rs` 提供中文翻译，其余语言留空（回退英文）。
 - **兼容性**：纯 additive 条目，不动既有 key。注意与低功耗 key 追加在同一个列表末尾，升级时按整段末尾一起核对。
 
+## TOML 配置导入 / 多服务器配置修复
+
+### libs/hbb_common/src/config.rs（第二批）
+
+- **改动**：三个纯新增——`Config::get_stored_option(k)` 与 `Config::get_stored_options()`（只读 `CONFIG2.options`，不含 `DEFAULT_SETTINGS` / `OVERWRITE_SETTINGS`），以及 `MultiServerStore::try_save() -> io::Result<()>`；`MultiServerStore::save()` 改为转调 `try_save()` 并在失败时记 error。
+- **目的**：`get_option` / `get_options` 返回的是**生效值**，无法区分"从未设置"与"构建预置"，导入据此判断单服务器配置是否被显式设置时会恒得非空答案；`save()` 原本吞掉落盘失败，并在失败后照样 publish 磁盘上的旧内容。
+- **兼容性**：全部 additive。`save()` 签名与行为（除"写失败则不再 publish"）不变，子仓库内既有调用点无需改动；两个新访问器当前只被 `#[cfg(feature = "toml-config-import")]` 代码使用。
+
+### src/core_main.rs（第二批）
+
+- **改动**：`--import-toml-config` 分支内新增 `is_cli_setting_change_disabled()` 检查；`run_toml_import_from_args` 在导入成功后调用新增的 `publish_imported_store()`（`crate::ipc::set_options` 推送已存储的 option map），退出码新增 `5`（`InvalidServerConfig`），并为 1 / 2 两个分支补上错误详情。
+- **目的**：该分支此前是唯一没有"设置已禁用"护栏的写配置入口；`publish()` 的返回值此前被直接丢弃，而 Windows 上没有 `sync_and_watch_config_dir`，已运行进程看不到导入结果。
+- **兼容性**：全部在 `#[cfg(feature = "toml-config-import")]` 内，未启用该 feature 时不编译。
+
+### src/config_import/**（含行为变更）
+
+- **改动**：跳过判定由「toml mtime 对比 `Config::file()` mtime」改为记录在 option `toml-import-source` 的 `路径|大小|mtime`；`[[rendezvous_servers]]` 合并由整条替换改为逐字段叠加；写入前新增条目校验（格式 / 文件内去重 / 数量上限）；布尔字段由 `bool` 改为 `Option<bool>`；`MappedConfig.options` 由 `HashMap` 改为 `BTreeMap`；`[options]` 改为先写入再被明确字段覆盖；新增 `version` 主版本校验；路径安全改为按路径段判断（`..` 子串不再误伤合法名字）；解析改为单次 `File::open`；含密钥的 struct 改为手工 `Debug` 打码。
+- **目的**：修正"配了但静默不生效"与"写入后配置被写坏"两类缺陷，逐条说明见 `docs/toml-config-import.md`。
+- **兼容性**：**含行为变更**——布尔 `false` 现在写入 `"N"`（此前等同未指定）；缺少 `name` / `id_server` 或带非法端口的服务器条目会被拒绝（退出码 5）而不是入库；同一份文件里重复的 `id` / `id_server` 会被拒绝而不是静默塌缩。现有部署若依赖旧行为，升级前需先检查 toml。
+
 ## vcpkg overlay port 补丁（aom / libyuv）
 
 这两个 overlay port 位于 `res/vcpkg/aom/`、`res/vcpkg/libyuv/`，通过 `vcpkg_from_git` 取源码。
@@ -224,3 +244,6 @@ libyuv 上游 tag 时，下列补丁需随上游改动重新核对或 rebase。
     （3.12.1 或 3.9.1）；`aom-avx2.diff` 的开关与所选 REF 一致（3.12.1 默认关、3.9.1 默认开）。
 18. `res/vcpkg/libyuv/portfile.cmake` 与 `res/vcpkg/libyuv/fix-cmakelists.patch` — 确认补丁仍能 apply
     到 libyuv REF `0faf8dd0e004520a61a603a4d2996d5ecc80dc3f`，且 `PUBLIC_HEADER` 头路径未随上游变动。
+19. `libs/hbb_common/src/config.rs` — 确认 `Config::get_stored_option` / `get_stored_options` 与 `MultiServerStore::try_save` 仍在，且 `save()` 仍转调 `try_save()`。
+20. `src/core_main.rs` — 确认 `--import-toml-config` 分支内的 `is_cli_setting_change_disabled()` 检查、末尾 `publish_imported_store()` 与退出码 `5` 映射仍在。
+21. `src/config_import/**` — 确认第二批改动的判定逻辑仍在（`toml-import-source` 记录式跳过、逐字段合并、写入前校验、`Option<bool>`、`BTreeMap`），以及与 `docs/toml-config-import.md` 的描述一致。

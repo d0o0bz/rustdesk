@@ -1,26 +1,54 @@
+use std::io::Read;
 use std::path::Path;
 
 use super::error::TomlParseError;
 use super::toml_config::TomlConfig;
 
-const MAX_FILE_SIZE: u64 = 1 * 1024 * 1024;
-const MAX_RETRIES: u32 = 3;
-const RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+const MB: u64 = 1024 * 1024;
+const MAX_FILE_SIZE: u64 = MB;
+
+/// The keys this reads at the top of the file, everything else being carried through, dropped,
+/// or here used to spot a mistyped table name, see [`warn_unknown_keys`].
+const KNOWN_TOP_LEVEL_KEYS: [&str; 11] = [
+    "version",
+    "rendezvous_server",
+    "rendezvous_port",
+    "relay_server",
+    "relay_port",
+    "api_server",
+    "rendezvous_servers",
+    "security",
+    "network",
+    "display",
+    "options",
+];
 
 pub struct TomlConfigParser;
 
 impl TomlConfigParser {
     pub fn parse(path: &Path) -> Result<TomlConfig, TomlParseError> {
-        let size = std::fs::metadata(path)
+        // One open for both the limit and the read. Checking the size through the path and
+        // opening it again to read leaves a gap for whatever points at it to change, which is
+        // the thing the limit is there to stop.
+        let mut file = std::fs::File::open(path).map_err(TomlParseError::FileReadError)?;
+        let size = file
+            .metadata()
             .map_err(TomlParseError::FileReadError)?
             .len();
         if size > MAX_FILE_SIZE {
-            return Err(TomlParseError::FileSizeExceeded {
-                max: 1,
-                actual: size / (1024 * 1024) + 1,
-            });
+            return Err(size_exceeded(size));
         }
-        let content = read_with_retry(path)?;
+        let mut content = String::new();
+        file.read_to_string(&mut content)
+            .map_err(|e| match e.kind() {
+                std::io::ErrorKind::InvalidData => TomlParseError::EncodingError,
+                _ => TomlParseError::FileReadError(e),
+            })?;
+        // Whatever grew past the cap between the two reads still has to be caught.
+        if content.len() as u64 > MAX_FILE_SIZE {
+            return Err(size_exceeded(content.len() as u64));
+        }
+        warn_unknown_keys(&content);
         match hbb_common::toml::from_str::<TomlConfig>(&content) {
             Ok(cfg) => Ok(cfg),
             Err(e) => {
@@ -35,25 +63,27 @@ impl TomlConfigParser {
     }
 }
 
-fn read_with_retry(path: &Path) -> Result<String, TomlParseError> {
-    let mut retries = 0u32;
-    loop {
-        match std::fs::read(path) {
-            Ok(bytes) => {
-                return String::from_utf8(bytes).map_err(|_| TomlParseError::EncodingError);
-            }
-            Err(e) => {
-                let kind = e.kind();
-                if (kind == std::io::ErrorKind::WouldBlock
-                    || kind == std::io::ErrorKind::PermissionDenied)
-                    && retries < MAX_RETRIES
-                {
-                    std::thread::sleep(RETRY_INTERVAL);
-                    retries += 1;
-                    continue;
-                }
-                return Err(TomlParseError::FileReadError(e));
-            }
+fn size_exceeded(size: u64) -> TomlParseError {
+    TomlParseError::FileSizeExceeded {
+        max: MAX_FILE_SIZE / MB,
+        actual: (size + MB - 1) / MB,
+    }
+}
+
+/// Name the top level keys that went unused.
+///
+/// Every key here is optional, so one that is mistyped reads as a file asking for nothing and
+/// leaves no trace to find it by - the import reports success and changes nothing.
+fn warn_unknown_keys(content: &str) {
+    let Ok(value) = hbb_common::toml::from_str::<hbb_common::toml::Value>(content) else {
+        return;
+    };
+    let Some(table) = value.as_table() else {
+        return;
+    };
+    for key in table.keys() {
+        if !KNOWN_TOP_LEVEL_KEYS.contains(&key.as_str()) {
+            log::warn!("忽略未知的顶层配置项: {}", key);
         }
     }
 }
@@ -131,6 +161,19 @@ mod tests {
         let res = TomlConfigParser::parse(&path);
         let _ = std::fs::remove_file(&path);
         assert!(matches!(res.unwrap_err(), TomlParseError::EncodingError));
+    }
+
+    #[test]
+    fn test_file_size_exceeded() {
+        // Comments, so the file is valid TOML and the size is the only thing wrong with it.
+        let content = vec![b'#'; MAX_FILE_SIZE as usize + 2];
+        let path = write_temp(&content, ".toml");
+        let res = TomlConfigParser::parse(&path);
+        let _ = std::fs::remove_file(&path);
+        assert!(matches!(
+            res.unwrap_err(),
+            TomlParseError::FileSizeExceeded { .. }
+        ));
     }
 
     #[test]

@@ -9,5 +9,6 @@ pub use error::{ConfigImportError, TomlParseError};
 pub use field_mapper::MappedConfig;
 pub use field_mapper::FieldMapper;
 pub use importer::ConfigImporter;
+pub use importer::ImportOutcome;
 pub use toml_config::TomlConfig;
 pub use toml_parser::TomlConfigParser;

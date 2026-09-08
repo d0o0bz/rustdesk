@@ -437,6 +437,12 @@ pub fn core_main() -> Option<Vec<String>> {
             // dec: TOML配置导入
             #[cfg(feature = "toml-config-import")]
             {
+                // Every other entry point that writes settings asks first, and a file anyone
+                // can drop next to the installer is not a reason to answer differently.
+                if is_cli_setting_change_disabled() {
+                    println!("Settings are disabled!");
+                    return None;
+                }
                 run_toml_import_from_args(&args);
             }
             #[cfg(not(feature = "toml-config-import"))]
@@ -795,20 +801,51 @@ fn run_toml_import_from_args(args: &[String]) -> ! {
         None => Err(ConfigImportError::TomlConfigNotFound),
     };
     let (code, message) = match result {
-        Ok(()) => (0i32, "配置导入成功".to_string()),
-        Err(ConfigImportError::PermissionDenied(_)) => (1, "权限不足".to_string()),
-        Err(ConfigImportError::TomlParseError(_)) => (2, "配置解析失败".to_string()),
+        Ok(outcome) => {
+            publish_imported_store(outcome.published);
+            (0i32, "配置导入成功".to_string())
+        }
+        Err(ConfigImportError::PermissionDenied(m)) => (1, format!("权限不足: {m}")),
+        Err(ConfigImportError::TomlParseError(e)) => (2, format!("配置解析失败: {e}")),
         Err(ConfigImportError::TomlConfigNotFound) => (3, "配置文件不存在".to_string()),
+        Err(ConfigImportError::InvalidServerConfig(e)) => (5, format!("配置校验失败: {e}")),
         Err(e) => (4, e.to_string()),
     };
     if json {
-        println!("{{\"code\": {}, \"message\": \"{}\"}}", code, message);
+        // Messages carry server names and validation details straight out of the file, so
+        // they have to be escaped before they land inside quoted json.
+        let escaped = message
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n");
+        println!("{{\"code\": {}, \"message\": \"{}\"}}", code, escaped);
     } else if code == 0 {
         println!("{}", message);
     } else {
         eprintln!("{}", message);
     }
     std::process::exit(code);
+}
+
+/// Hand the list the import published to whatever is already running.
+///
+/// Publishing only reached this process' copy of the options, and on Windows nothing carries
+/// that over by itself, `sync_and_watch_config_dir` being macOS and Linux only. The channel
+/// exchanges whole maps, so out goes everything stored here rather than the one key, and the
+/// stored map rather than `Config::get_options`, whose defaults would land written on the far
+/// side and afterwards read back as settings somebody had made. Nobody listening is not a
+/// failure either, the next start reads its own copy.
+#[cfg(feature = "toml-config-import")]
+fn publish_imported_store(published: Option<String>) {
+    use hbb_common::config::OPTION_MULTI_SERVER_STORE;
+    let Some(json) = published else {
+        return;
+    };
+    let mut options = config::Config::get_stored_options();
+    options.insert(OPTION_MULTI_SERVER_STORE.to_owned(), json);
+    if let Err(e) = crate::ipc::set_options(options) {
+        log::warn!("多服务器配置未能推送到运行中的进程: {e}");
+    }
 }
 
 /// invoke a new connection

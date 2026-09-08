@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use hbb_common::config::{ServerConfig, Socks5Server};
 
@@ -12,7 +12,10 @@ pub struct MappedConfig {
     pub rendezvous_server: Option<String>,
     pub rendezvous_servers: Vec<ServerConfig>,
     pub socks: Option<Socks5Server>,
-    pub options: HashMap<String, String>,
+    /// Sorted rather than hashed so the options go out in one order: every server option
+    /// write mirrors the list back and re-ranks it, so which one lands last decides what the
+    /// store ends up looking like.
+    pub options: BTreeMap<String, String>,
 }
 
 impl FieldMapper {
@@ -37,7 +40,14 @@ impl FieldMapper {
     }
 
     pub fn map_to_internal_config(toml_config: TomlConfig) -> MappedConfig {
-        let mut options = HashMap::new();
+        let mut options = BTreeMap::new();
+
+        // The extended keys go in first and everything spelled out below lands on top of them,
+        // so the two can never disagree about which one won - which they used to, on nothing
+        // more than the order a hashmap handed the keys over in.
+        for (k, v) in &toml_config.options {
+            options.insert(k.clone(), v.clone());
+        }
 
         if let Some(v) = Self::map_optional_string(&toml_config.relay_server) {
             options.insert("relay-server".to_string(), v);
@@ -48,11 +58,11 @@ impl FieldMapper {
         if let Some(v) = Self::map_optional_string(&toml_config.security.access_mode) {
             options.insert("access-mode".to_string(), v);
         }
-        if toml_config.security.enable_2fa {
-            options.insert("enable-2fa".to_string(), Self::map_bool(true));
+        if let Some(v) = toml_config.security.enable_2fa {
+            options.insert("enable-2fa".to_string(), Self::map_bool(v));
         }
-        if toml_config.security.whitelist_enabled {
-            options.insert("whitelist-enabled".to_string(), Self::map_bool(true));
+        if let Some(v) = toml_config.security.whitelist_enabled {
+            options.insert("whitelist-enabled".to_string(), Self::map_bool(v));
         }
         if !toml_config.security.whitelist.is_empty() {
             options.insert(
@@ -73,19 +83,27 @@ impl FieldMapper {
         if let Some(v) = Self::map_optional_string(&toml_config.display.scroll_style) {
             options.insert("scroll-style".to_string(), v);
         }
-        if toml_config.display.show_remote_cursor {
-            options.insert("show-remote-cursor".to_string(), Self::map_bool(true));
+        if let Some(v) = toml_config.display.show_remote_cursor {
+            options.insert("show-remote-cursor".to_string(), Self::map_bool(v));
         }
-        if toml_config.display.disable_audio {
-            options.insert("disable-audio".to_string(), Self::map_bool(true));
+        if let Some(v) = toml_config.display.disable_audio {
+            options.insert("disable-audio".to_string(), Self::map_bool(v));
         }
-        if toml_config.display.disable_clipboard {
-            options.insert("disable-clipboard".to_string(), Self::map_bool(true));
+        if let Some(v) = toml_config.display.disable_clipboard {
+            options.insert("disable-clipboard".to_string(), Self::map_bool(v));
         }
 
         for (k, v) in &toml_config.options {
-            log::warn!("忽略未知配置项: {}", k);
-            options.insert(k.clone(), v.clone());
+            if let Some(overridden) = options.get(k) {
+                if overridden != v {
+                    log::warn!(
+                        "扩展配置项 {} 被同名的配置字段覆盖: {} -> {}",
+                        k,
+                        v,
+                        overridden
+                    );
+                }
+            }
         }
 
         let password = Self::map_optional_string(&toml_config.security.password);
@@ -230,6 +248,35 @@ show_remote_cursor = true
         assert_eq!(socks.proxy, "127.0.0.1:1080");
         assert_eq!(socks.username, "u");
         assert_eq!(socks.password, "p");
+    }
+
+    #[test]
+    fn test_explicit_false_turns_a_setting_off() {
+        // `false` used to read as "not mentioned", so a file could never switch anything off.
+        let content = "[display]\ndisable_audio = false\nshow_remote_cursor = true\n";
+        let cfg: TomlConfig = hbb_common::toml::from_str(content).unwrap();
+        let mapped = FieldMapper::map_to_internal_config(cfg);
+        assert_eq!(mapped.options.get("disable-audio").unwrap(), "N");
+        assert_eq!(mapped.options.get("show-remote-cursor").unwrap(), "Y");
+    }
+
+    #[test]
+    fn test_omitted_bool_is_left_alone() {
+        let mapped = FieldMapper::map_to_internal_config(TomlConfig::default());
+        assert!(!mapped.options.contains_key("disable-audio"));
+        assert!(!mapped.options.contains_key("enable-2fa"));
+    }
+
+    #[test]
+    fn test_explicit_field_beats_options_entry() {
+        let content =
+            "relay_server = \"relay.example.com\"\n\n[options]\nrelay-server = \"ext.example.com\"\n";
+        let cfg: TomlConfig = hbb_common::toml::from_str(content).unwrap();
+        let mapped = FieldMapper::map_to_internal_config(cfg);
+        assert_eq!(
+            mapped.options.get("relay-server").unwrap(),
+            "relay.example.com"
+        );
     }
 
     #[test]
