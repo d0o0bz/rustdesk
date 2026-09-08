@@ -88,8 +88,66 @@
 - **兼容性**：空 feature，默认不启用，不影响现有构建。
 
 - **文件**：`src/core_main.rs`
-- **改动**：三处 `#[cfg(feature = "toml-config-import")]` 门控的新增：① `core_main()` 开头自动导入钩子；② `--import-toml-config` 参数分支；③ `run_toml_import_from_args` 函数。均带 `// dec: TOML配置导入` 注释。
+- **改动**：两处 `#[cfg(feature = "toml-config-import")]` 门控的新增：① `core_main()` 参数分派链中 `--import-toml-config` 分支（`cfg!(feature)` 短路 + 分支内 `#[cfg]` 块）；② 文件末尾 `run_toml_import_from_args()` 函数（解析 `--json` 与路径、映射退出码、`std::process::exit`）。`// dec: TOML配置导入` 标记只在分支处有一处。
 - **兼容性**：feature 门控，未启用时参数分支条件 `cfg!(feature)` 为 false 不匹配，行为不变。
+
+### Windows 安装器改动
+
+- **文件**：`res/msi/CustomActions/ImportTomlConfig.cpp`（新增）、`res/msi/CustomActions/CustomActions.def`、`res/msi/CustomActions/CustomActions.vcxproj`
+- **改动**：新增 deferred custom action `ImportTomlConfig`（导出名加入 `.def`、源文件加入 `.vcxproj`）。以 SYSTEM 运行，但用 `WTSEnumerateSessions` + `WTSQueryUserToken` + `CreateProcessAsUserW` 在每个 `WTSActive` 会话里以用户身份执行 `RustDesk.exe --import-toml-config <toml>`，单会话等待上限 60 s。
+- **目的**：让安装期导入落到真实登录用户的 `%APPDATA%` 配置，而不是 SYSTEM 的配置。
+- **兼容性**：`Return="ignore"`，toml 缺失 / 无活动会话 / 导入失败一律只记日志不中断安装。
+
+- **文件**：`res/msi/Package/Fragments/CustomActions.wxs`、`res/msi/Package/Components/RustDesk.wxs`
+- **改动**：声明 `ImportTomlConfig` 与 `ImportTomlConfig.SetParam`（参数格式 `<msi 路径>|<exe 路径>|<toml 文件名>`，`$(var.ProductLower)-config-import.toml`），并排入 `InstallFiles` 之后，条件 `NOT (Installed AND REMOVE AND NOT UPGRADINGPRODUCTCODE)`。
+- **目的**：全新安装与升级时导入，卸载时不导入。
+- **兼容性**：只在既有 `InstallExecuteSequence` 中追加两条 `<Custom>`，不动上游其它自定义动作。
+
+- **文件**：`res/msi/Package/UI/MyInstallDirDlg.wxs`、`res/msi/Package/Language/Package.en-us.wxl`、`res/msi/Package/Fragments/ShortcutProperties.wxs`、`res/msi/Package/Package.wxs`、`res/msi/Package/Components/RustDesk.wxs`
+- **改动**：新增 `ADDTOPATH` 属性与「Add to PATH (command line usage)」勾选项（默认 `1`），配套 `App.Path` 组件（`Environment Name="PATH" Part="last" System="yes"`）与两个把选择持久化到 `HKCR\$(var.RegKeyRoot)\ADDTOPATH` 的组件（`...AddToPathProperties1/0`），后者在 `Package.wxs` 中 `ComponentRef`。
+- **目的**：把安装目录追加进系统 PATH，便于在任意目录跑 `--import-toml-config`。
+- **兼容性**：纯 additive 对话框控件 + 新组件；`Part="last"` 不覆盖既有 PATH，卸载时由 Windows Installer 自动移除。
+
+- **文件**：`build.py`
+- **改动**：新增 `--toml-config-import` 命令行参数（映射到 feature 列表）；生成的 `install.sh` 不再复制 toml，改为打印「以登录用户身份运行 `rustdesk --import-toml-config <path>`」提示。
+- **兼容性**：参数默认关闭；不带该参数时 feature 列表与上游一致。
+
+## 多服务器配置（multi-server config）
+
+`libs/hbb_common` 是独立 git 子仓库，这一组改动大部分落在其中，需在 `libs/hbb_common` 里单独提交。
+
+### 新增文件（无上游修改）
+
+- **文件**：`flutter/lib/models/server_config_model.dart`、`flutter/lib/common/widgets/server_config_dialog.dart`、`flutter/lib/common/widgets/server_config_widgets.dart`
+- **改动**：多服务器配置的 model 与桌面/移动端共用的列表、编辑对话框组件。
+- **兼容性**：纯新增 Dart 文件，未接入前不参与渲染。
+
+### 上游文件修改
+
+- **文件**：`libs/hbb_common/src/config.rs`
+- **改动**：带 `// dec: 多配置支持` 标记的成组新增——`ServerConfig` 结构体与 `Default`（`id` 为 UUID、`id_port` = `RENDEZVOUS_PORT`、`relay_port` = `Some(RELAY_PORT)`）；`Config2` 增加 `rendezvous_servers` / `current_config_id` 两个带 `serde(default)` 的字段；`OPTION_AUTO_SWITCH_ENABLED` / `OPTION_MULTI_SERVER_STORE` / `MAX_SERVER_CONFIGS`（上限 5）常量；`ConfigState`、`MultiServerStore`（独立存储，后缀 `multi_config`，与 `Config2` 分开落盘）、`ConfigError`、`ServerConfigRepository`（`SERVER_OPTION_KEYS` 四键同步 + `SUPPRESS_DEFAULT_PROMOTION` 抑制默认项提升）、`ConfigManager`、`AvailabilityChecker`、`LatencyMonitor`、手动/自动切换器与单元测试。
+- **目的**：支持保存多个中继服务器配置并在其间手动/自动切换。
+- **兼容性**：`Config2` 只加带 `serde(default)` 的字段，旧配置文件仍可反序列化；其余均为 additive 结构体 / 函数 / 常量。升级时需重点确认 `Config2` 未被上游新增同名字段。
+
+- **文件**：`src/ui_interface.rs`
+- **改动**：新增 `// dec: 多配置支持` 的 glue 层，薄封装 `ConfigManager` 等能力后暴露给上层。
+- **兼容性**：additive 函数。
+
+- **文件**：`src/ui.rs`
+- **改动**：在 `get_connect_status` 之后新增 `// dec: 多配置支持 - 配置管理IPC接口` 一组方法（`get_all_configs` / `get_current_config` 等）。
+- **兼容性**：只在既有 sciter IPC trait 实现里追加方法。
+
+- **文件**：`src/flutter_ffi.rs`
+- **改动**：新增 `// dec: 多配置支持 - 暴露给 Flutter 的多服务器配置接口`。
+- **兼容性**：additive FFI 导出。
+
+- **文件**：`flutter/lib/desktop/pages/desktop_setting_page.dart`、`flutter/lib/mobile/pages/settings_page.dart`
+- **改动**：各追加一个服务器配置入口卡片（桌面端 8 行、移动端 8 行）。
+- **兼容性**：纯 additive 挂载。
+
+- **文件**：`src/lang/template.rs` 及 `src/lang/*.rs`
+- **改动**：`template.rs` 末尾追加 19 条 key（`Edit`、`Use`、`In use`、`Available`、`Unavailable`、`Latency`、`Checking...`、`Required`、`Multiple server config`、`Auto switch server`、`Add server config`、`Edit server config`、`Delete server config`、`Delete server config tip`、`No server config`、`Not checked`、`Check availability`、`ID Server Port`、`Relay Server Port`）；`en.rs` 只补有英文文案差异的项，`cn.rs` / `tw.rs` 提供中文翻译，其余语言留空（回退英文）。
+- **兼容性**：纯 additive 条目，不动既有 key。注意与低功耗 key 追加在同一个列表末尾，升级时按整段末尾一起核对。
 
 ## vcpkg overlay port 补丁（aom / libyuv）
 
@@ -99,10 +157,11 @@
 - `res/vcpkg/aom/portfile.cmake`：若设 `AOM_SRC_URL` 则用之，否则回落 `https://aomedia.googlesource.com/aom`。
 - `res/vcpkg/libyuv/portfile.cmake`：若设 `LIBYUV_SRC_URL` 则用之，否则回落 `https://chromium.googlesource.com/libyuv/libyuv`。
 
-本地 Docker 构建（`docker/build-flutter.sh`）会 `export AOM_SRC_URL` / `LIBYUV_SRC_URL` 指向本地
-`file:///workspace/docker/...` 仓库（见 `docker/README.md` "网络代理说明"），使 vcpkg 跳过网络直接读
-本地 git 仓库；GitHub CI 不设置这两个变量，portfile 走上游 googlesource 真实 URL。升级 aom / libyuv
-上游 tag 时，下列补丁需随上游改动重新核对或 rebase。
+本地 Docker 构建（`docker/build-flutter.sh`）会 `export AOM_SRC_URL` / `LIBYUV_SRC_URL` 指向容器内
+`file:///workspace/docker/aom-src/aom_aomedia.googlesource.com` 与
+`file:///workspace/docker/libyuv-src/libyuv`（见 `docker/README.md` "网络代理说明"），使 vcpkg 跳过网络
+直接读本地 git 仓库；GitHub CI 不设置这两个变量，portfile 走上游 googlesource 真实 URL。升级 aom /
+libyuv 上游 tag 时，下列补丁需随上游改动重新核对或 rebase。
 
 ### aom 补丁
 
@@ -153,11 +212,15 @@
 6. `flutter/lib/desktop/pages/desktop_setting_page.dart` — 确认 `lowPowerMode()` 卡片与其 General 挂载点仍在；若设置页重构，需重新挂载。
 7. `libs/scrap/src/common/codec.rs` — 确认 `enable_hwcodec_option()` 内的 macOS `low-power-mode` 分支仍在。
 8. `src/lang/template.rs` — 确认 `Low power mode`、`Enable low-power mode on dual-GPU Macs`、`low_power_mode_tip` 三个 key 仍在。
-6. `flutter/lib/consts.dart` — 确认 `kOptionLowPowerMode` 常量仍在。
-7. `src/lib.rs` — 确认 `#[cfg(feature = "toml-config-import")] mod config_import;` 仍在。
-8. `Cargo.toml` — 确认 `toml-config-import` feature 仍在。
-9. `src/core_main.rs` — 确认三处 `// dec: TOML配置导入` 标记点仍在且 `#[cfg]` 门控完整。
-10. `res/vcpkg/aom/portfile.cmake` 与 `res/vcpkg/aom/*.diff` — 确认三个补丁仍能 apply 到所选 aom REF
+9. `flutter/lib/consts.dart` — 确认 `kOptionLowPowerMode` 常量仍在。
+10. `src/lib.rs` — 确认 `#[cfg(feature = "toml-config-import")] mod config_import;` 仍在。
+11. `Cargo.toml` — 确认 `toml-config-import` feature 仍在。
+12. `src/core_main.rs` — 确认 `--import-toml-config` 分支与 `run_toml_import_from_args()` 两处仍在且 `#[cfg]` 门控完整。
+13. `res/msi/` — 确认 `ImportTomlConfig` 自定义动作（`.cpp` / `.def` / `.vcxproj` / `CustomActions.wxs` / `RustDesk.wxs`）与 `ADDTOPATH` 相关属性、组件、对话框控件仍在。
+14. `build.py` — 确认 `--toml-config-import` 参数与 `install.sh` 用法提示仍在。
+15. `libs/hbb_common/src/config.rs` — 确认 `ServerConfig`、`Config2` 的 `rendezvous_servers` / `current_config_id`、`MultiServerStore` 独立存储、`ServerConfigRepository`、`ConfigManager` 等 `// dec: 多配置支持` 标记块仍在；重点确认 `Config2` 未被上游新增同名字段。
+16. `src/ui.rs`、`src/ui_interface.rs`、`src/flutter_ffi.rs` — 确认 `// dec: 多配置支持` 的 IPC / glue / FFI 接口仍在。
+17. `res/vcpkg/aom/portfile.cmake` 与 `res/vcpkg/aom/*.diff` — 确认三个补丁仍能 apply 到所选 aom REF
     （3.12.1 或 3.9.1）；`aom-avx2.diff` 的开关与所选 REF 一致（3.12.1 默认关、3.9.1 默认开）。
-11. `res/vcpkg/libyuv/portfile.cmake` 与 `res/vcpkg/libyuv/fix-cmakelists.patch` — 确认补丁仍能 apply
+18. `res/vcpkg/libyuv/portfile.cmake` 与 `res/vcpkg/libyuv/fix-cmakelists.patch` — 确认补丁仍能 apply
     到 libyuv REF `0faf8dd0e004520a61a603a4d2996d5ecc80dc3f`，且 `PUBLIC_HEADER` 头路径未随上游变动。
