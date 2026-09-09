@@ -409,8 +409,12 @@ jobs:
   build-for-windows-sciter:
     name: ${{ matrix.job.target }} (${{ matrix.job.os }})
     runs-on: ${{ matrix.job.os }}
-    # Temporarily disable this action due to additional test is needed.
-    # if: false
+    # Disabled: the toolchain below is named `nightly-2023-10-13-${{ matrix.job.target }}`,
+    # and rustup refuses to install an i686-pc-windows-msvc *host* toolchain on the x86_64
+    # runner ("may not be able to run on this system"). Re-enabling this job means dropping
+    # the host triple from the toolchain name and building the 32bit Sciter flavour as a
+    # cross target instead.
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -903,7 +907,6 @@ jobs:
     needs:
       - build-for-macOS
       - build-for-windows-flutter
-      - build-for-windows-sciter
     runs-on: ubuntu-latest
     if: ${{ inputs.upload-artifact }}
     steps:
@@ -925,15 +928,9 @@ jobs:
           name: rustdesk-unsigned-windows-x86_64
           path: ./windows-x86_64/
 
-      - name: Download Artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: rustdesk-unsigned-windows-x86
-          path: ./windows-x86/
-
       - name: Combine unsigned app
         run: |
-          tar czf rustdesk-${{ env.VERSION }}-unsigned.tar.gz *.dmg windows-x86_64 windows-x86
+          tar czf rustdesk-${{ env.VERSION }}-unsigned.tar.gz *.dmg windows-x86_64
 
       - name: Publish unsigned app
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
