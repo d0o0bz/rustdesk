@@ -18,6 +18,7 @@ import '../../common.dart';
 import '../../common/formatter/id_formatter.dart';
 import '../../common/widgets/peer_tab_page.dart';
 import '../../common/widgets/autocomplete.dart';
+import '../../common/widgets/server_config_dialog.dart';
 import '../../models/platform_model.dart';
 import '../../desktop/widgets/material_mod_popup_menu.dart' as mod_menu;
 
@@ -35,6 +36,8 @@ class OnlineStatusWidget extends StatefulWidget {
 class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
   final _svcStopped = Get.find<RxBool>(tag: 'stop-service');
   final _svcIsUsingPublicServer = true.obs;
+  final _currentServer = ''.obs;
+  late final bool _hideServer;
   Timer? _updateTimer;
 
   double get em => 14.0;
@@ -52,6 +55,7 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
   @override
   void initState() {
     super.initState();
+    _hideServer = bind.mainGetBuildinOption(key: kOptionHideServerSetting) == 'Y';
     _updateTimer = periodic_immediate(Duration(seconds: 1), () async {
       updateStatus();
     });
@@ -109,6 +113,25 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
           ),
         );
 
+    currentServerWidget() => InkWell(
+          onTap: () => showServerConfigManager(gFFI.dialogManager),
+          child: Row(
+            children: [
+              Icon(Icons.dns_outlined, size: em),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  _currentServer.value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      decoration: TextDecoration.underline, fontSize: em),
+                ),
+              ),
+            ],
+          ),
+        ).marginOnly(left: em);
+
     basicWidget() => Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -134,6 +157,9 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
             // ready && public
             // No need to show the guide if is custom client.
             if (!isIncomingOnly) setupServerWidget(),
+            // Last, so it never splits the "Ready, <setup tip>" phrasing above.
+            if (_currentServer.value.isNotEmpty)
+              Flexible(child: currentServerWidget()),
           ],
         );
 
@@ -167,6 +193,39 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
     );
   }
 
+  /// The server in use as "name · host:port", or just the address when it is not one of the
+  /// stored configs, which is the case whenever the public servers are in use.
+  ///
+  /// The list is read instead of `mainGetCurrentServerConfig` because that one answers from
+  /// the recorded `current_config_id`, which lags behind when the service fails over on its
+  /// own, while the list marks the current entry from the option the connection uses.
+  Future<String> _currentServerText() async {
+    try {
+      final configs = jsonDecode(await bind.mainGetAllServerConfigs()) as List;
+      for (final item in configs) {
+        if (item is! Map<String, dynamic> || item['is_current'] != true) {
+          continue;
+        }
+        final host = (item['id_server'] as String? ?? '').trim();
+        if (host.isEmpty) {
+          break;
+        }
+        final port = item['id_port'] as int? ?? 0;
+        final address = host.contains(':') || port <= 0 ? host : '$host:$port';
+        final name = (item['name'] as String? ?? '').trim();
+        return name.isEmpty ? address : '$name · $address';
+      }
+    } catch (e) {
+      debugPrint('read server configs failed: $e');
+    }
+    try {
+      return (await bind.mainGetRendezvousServer()).trim();
+    } catch (e) {
+      debugPrint('read rendezvous server failed: $e');
+      return '';
+    }
+  }
+
   updateStatus() async {
     final status =
         jsonDecode(await bind.mainGetConnectStatus()) as Map<String, dynamic>;
@@ -181,6 +240,12 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
       stateGlobal.svcStatus.value = SvcStatus.notReady;
     }
     _svcIsUsingPublicServer.value = await bind.mainIsUsingPublicServer();
+    // An empty text takes the entry out of the status bar, so switching the option off, or
+    // hiding the server settings, leaves the bar exactly as it was before.
+    _currentServer.value = _hideServer ||
+            !mainGetLocalBoolOptionSync(kOptionShowServerInStatusBar)
+        ? ''
+        : await _currentServerText();
     try {
       stateGlobal.videoConnCount.value = status['video_conn_count'] as int;
     } catch (_) {}

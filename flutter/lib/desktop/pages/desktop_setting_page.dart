@@ -501,6 +501,12 @@ class _GeneralState extends State<_General> {
         ),
       if (!isWeb && !outgoingOnly)
         _OptionCheckBox(context, 'Adaptive bitrate', kOptionEnableAbr),
+      _OptionCheckBox(
+        context,
+        'Show current server in the status bar',
+        kOptionShowServerInStatusBar,
+        isServer: false,
+      ),
       if (!isWeb) wallpaper(),
       if (!isWeb && !incomingOnly) ...[
         _OptionCheckBox(

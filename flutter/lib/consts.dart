@@ -180,6 +180,9 @@ const String kOptionAllowMonitorSwitchMainToolbar = "allow-monitor-switch-main-t
 const String kOptionAllowMonitorSwitchMinToolbar = "allow-monitor-switch-min-toolbar";
 const String kOptionEnableShowTerminalExtraKeys = "enable-show-terminal-extra-keys";
 const String kOptionShowTerminalCtrlKeys = "show-terminal-extra-ctrl-keys";
+// dec: 主页状态栏是否显示当前服务器（本机端 option）。非 enable-/allow- 前缀，option2bool
+// 对空值判真，故缺省为开启。
+const String kOptionShowServerInStatusBar = "show-server-in-statusbar";
 
 // network options
 const String kOptionAllowWebSocket = "allow-websocket";

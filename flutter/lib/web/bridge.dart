@@ -1145,6 +1145,12 @@ class RustdeskImpl {
     return Future(() => js.context.callMethod('getByName', ['api_server']));
   }
 
+  /// Web 上没有 PROD_RENDEZVOUS_SERVER，只能给出显式配置的那个；为空时调用方不渲染。
+  Future<String> mainGetRendezvousServer({dynamic hint}) {
+    return Future.value(
+        mainGetOptionSync(key: 'custom-rendezvous-server'));
+  }
+
   Future<void> mainPostRequest(
       {required String url,
       required String body,

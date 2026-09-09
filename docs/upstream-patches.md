@@ -211,6 +211,34 @@
 - **改动**：末尾追加 18 个新 key（`Set as default` 之外的 17 条为错误文案英文句子：`Config name is required`、`Config name cannot exceed 50 characters`、`ID server address is required`、`Server address is required`、`Invalid ID server port`、`Invalid relay server port`、`Duplicate config name`、`This ID server address already exists`、`Maximum of 5 configs reached`、`The last config cannot be deleted`、`The default config cannot be deleted`、`The default config is pinned to the top`、`Invalid priority position`、`Config not found`、`The ID server is unreachable`、`Disconnect the remote session before switching config`、`Switching is protected, try again later`）；`cn.rs` / `tw.rs` 填中文译文，其余语言留空（回退英文）。另补登此前遗漏的 `Move up` / `Move down`（界面在用但从未登记，`cn` / `tw` 填 `上移` / `下移`），并把仓库中已存在但 `tw` 为空的 `Set as default` 补上 `設為預設`。
 - **兼容性**：纯 additive 条目，不动任何既有非空翻译。
 
+## 主页状态栏显示当前服务器
+
+### src/flutter_ffi.rs
+
+- **改动**：紧邻 `main_get_api_server()` 新增 `pub fn main_get_rendezvous_server() -> String`，一行转发 `config::Config::get_rendezvous_server()`（该文件已有 `hbb_common::config::{self, ...}` 导入，无需新增 `use`）。
+- **目的**：`custom-rendezvous-server` option 在走公共服务器时为空，拿不到当前实际生效的地址；`Config::get_rendezvous_server()`（`libs/hbb_common/src/config.rs:1996`）按 `EXE_RENDEZVOUS_SERVER` → `custom-rendezvous-server` → `PROD_RENDEZVOUS_SERVER`（启动时 `test_rendezvous_server()` 选中的那台）→ `Config2.rendezvous_server` → 内置列表首项的优先级给出答案，此前没有任何 FFI 出口。
+- **兼容性**：纯 additive 导出，不改任何既有函数。
+
+### flutter/lib/web/bridge.dart
+
+- **改动**：`class RustdeskImpl` 内新增 `Future<String> mainGetRendezvousServer({dynamic hint})`，回落到 `mainGetOptionSync(key: 'custom-rendezvous-server')`。
+- **目的**：Web 构建下 `RustdeskImpl` 来自本文件，缺方法会直接编译失败。Web 上没有 `PROD_RENDEZVOUS_SERVER`，拿不到公共服务器地址时返回空串（调用方不渲染）。
+- **兼容性**：纯新增方法。
+
+### flutter/lib/desktop/pages/connection_page.dart
+
+- **改动**：`_OnlineStatusWidgetState` 新增 `final _currentServer = ''.obs` 与 `late final bool _hideServer`（`initState` 里读 `kOptionHideServerSetting`）；`updateStatus()` 内追加 `_currentServer.value = await _currentServerText()`（复用已有的 1 秒轮询，**不新增 Timer**）；新增私有 `_currentServerText()`；`basicWidget()` 的 children **末尾**（`setupServerWidget()` 之后）插入 `Flexible(child: currentServerWidget())`；新增局部 `currentServerWidget()`（`Icons.dns_outlined` + 下划线文本 + `TextOverflow.ellipsis`，`InkWell` 点击调 `showServerConfigManager(gFFI.dialogManager)`）；新增 `import '../../common/widgets/server_config_dialog.dart';`。
+- **目的**：让用户在主页一眼看到当前连的是哪台服务器，并可一键进入多服务器管理弹窗。
+- **兼容性**：纯 additive 字段与方法；只在 `!_hideServer && 文本非空` 时插入一个 child，其余布局不变。放在末尾是为了不打断既有「Ready, ⟨setup_server_tip⟩」这句由逗号拼接的文案。
+- **实现要点**：用 `mainGetAllServerConfigs()` 而不是 `mainGetCurrentServerConfig()`——后者读 `store.current_config_id`，服务进程自行故障切换后会滞后，而前者由 `ServerConfigRepository::current_id()` 以 `custom-rendezvous-server` option 为准；端口拼接沿用 `apply_current` 的 `contains(':')` 判断；两侧 `Flexible` 都在 `basicWidget()` 的 `Row` 内，incoming-only 分支下该 `Row` 仍是 `Row`（外层 `Column` 的宽度由 `desktop_home_page.dart:132` 固定为 280），布局合法。
+
+### 设置 → 常规 的开关
+
+- **文件**：`flutter/lib/consts.dart`、`flutter/lib/desktop/pages/desktop_setting_page.dart`、`src/lang/*.rs`
+- **改动**：新增 `kOptionShowServerInStatusBar = "show-server-in-statusbar"`；`other()` 卡片里（`Adaptive bitrate` 之后）挂载一个 `_OptionCheckBox`，`isServer: false` 即**本机端 local option**（纯 UI 偏好，不经 IPC 推给服务进程）；新翻译 key `Show current server in the status bar`（`cn` = 在状态栏显示当前服务器，`tw` = 在狀態列顯示目前伺服器）。
+- **目的**：让用户能关掉状态栏这一项。
+- **兼容性**：纯 additive。注意 `option2bool`（`libs/hbb_common/src/config.rs:3962`）对非 `enable-` / `allow-` 前缀的 key 判 `value != "N"`，因此该 key 缺省为**开启**；`bool2option` 写 `Y` / `N`，开关可正常回读。状态栏侧通过 `mainGetLocalBoolOptionSync(kOptionShowServerInStatusBar)` 门控，关闭时把文本置空（条目不渲染），1 秒轮询内生效。
+
 ## vcpkg overlay port 补丁（aom / libyuv）
 
 这两个 overlay port 位于 `res/vcpkg/aom/`、`res/vcpkg/libyuv/`，通过 `vcpkg_from_git` 取源码。
@@ -292,4 +320,8 @@ libyuv 上游 tag 时，下列补丁需随上游改动重新核对或 rebase。
 22. `libs/hbb_common/src/config.rs` — 确认 `set_default_config` 仍走「校验存在 + `promote_default` 置顶 + `save()`」，以及 `ConfigError` / `SwitchError` 的英文 `#[error(...)]` 文案未被上游改回。
 23. `src/ui_interface.rs` — 确认两处 `ConfigError::ConfigNotFound` 仍在，且没有引入 `crate::client::translate`（移动端不可用，会导致 E0425）；翻译统一由 Dart 侧 `translate(err)` 承担。
 24. `src/lang/template.rs` — 确认第三批 18 个错误文案 key 与 `Move up` / `Move down` 仍在，且 `Set as default` 未被上游移除。
-25. `flutter/lib/web/bridge.dart` — 确认 12 个多服务器接口仍在；上游若为该类的接口补了实现，需合并而不是简单覆盖。
+25. `flutter/lib/web/bridge.dart` — 确认 12 个多服务器接口与 `mainGetRendezvousServer` 仍在；上游若为该类的接口补了实现，需合并而不是简单覆盖。
+26. `src/flutter_ffi.rs` — 确认 `main_get_rendezvous_server` 仍在，且 `Config::get_rendezvous_server()` 在 `libs/hbb_common` 中未被改名 / 移除。
+27. `flutter/lib/desktop/pages/connection_page.dart` — 确认 `OnlineStatusWidget` 的 `_currentServer` / `_hideServer` / `_currentServerText()` / `currentServerWidget()` 仍在；若上游重构了状态栏布局，需重新挂载并复核 `Flexible` 的合法性。
+28. `flutter/lib/consts.dart` 与 `flutter/lib/desktop/pages/desktop_setting_page.dart` — 确认 `kOptionShowServerInStatusBar` 与 `other()` 里的开关仍在；升级时若 `option2bool` 的前缀规则变了，需复核该开关的缺省值是否仍为开启。
+29. `src/lang/template.rs` — 确认 `Show current server in the status bar` 仍在。

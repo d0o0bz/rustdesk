@@ -803,5 +803,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Switching is protected, try again later", ""),
         ("Move up", ""),
         ("Move down", ""),
+        ("Show current server in the status bar", ""),
     ].iter().cloned().collect();
 }

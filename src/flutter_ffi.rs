@@ -1144,6 +1144,13 @@ pub fn main_get_api_server() -> String {
     get_api_server()
 }
 
+/// The server the connection is actually on, whichever source it comes from: a custom one,
+/// the public server picked at startup, or the one built into the client. Needed because
+/// `custom-rendezvous-server` is empty whenever the public servers are in use.
+pub fn main_get_rendezvous_server() -> String {
+    config::Config::get_rendezvous_server()
+}
+
 pub fn main_deploy_device(token: String, id: String) -> String {
     #[cfg(target_os = "android")]
     {
