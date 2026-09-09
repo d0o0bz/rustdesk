@@ -71,7 +71,7 @@ Future<void> showServerConfigManager(
             refresh();
             showToast(translate('Successful'));
           } else {
-            showToast(err);
+            showToast(translate(err));
           }
         }
 
@@ -168,7 +168,7 @@ Future<void> showServerConfigManager(
           refresh();
           showToast(translate('Successful'));
         } else {
-          showToast(err);
+          showToast(translate(err));
         }
       }
     }
@@ -179,7 +179,7 @@ Future<void> showServerConfigManager(
         refresh();
         showToast(translate('Successful'));
       } else {
-        showToast(err);
+        showToast(translate(err));
         refresh();
       }
     }
@@ -274,7 +274,7 @@ Future<void> showServerConfigManager(
                           refresh();
                           showToast(translate('Successful'));
                         } else {
-                          showToast(err);
+                          showToast(translate(err));
                         }
                       },
                       onEdit: () => _showEditDialog(item),
@@ -292,7 +292,7 @@ Future<void> showServerConfigManager(
                           refresh();
                           showToast(translate('Successful'));
                         } else {
-                          showToast(err);
+                          showToast(translate(err));
                         }
                       },
                       onMoveUp: index <= 1

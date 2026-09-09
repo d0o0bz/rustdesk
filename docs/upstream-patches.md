@@ -179,9 +179,9 @@
 
 ### src/ui_interface.rs
 
-- **改动**：`use` 列表加入 `ConfigError`；新增私有 `translate_server_config_error(String)`（内部 `crate::client::translate`）；`add/update/delete/switch/set_default/move` 六处 `e.to_string()` 改为经该 helper 输出；`update_server_config` 与 `switch_server_config` 的 `"配置不存在"` 字面量改为 `ConfigError::ConfigNotFound.to_string()` 经 helper 输出。
-- **目的**：错误文案经 `translate` 后按语言回退，英文用户看到英文、中文用户看到中文。
-- **兼容性**：只对返回给 UI 的字符串做包一层，不改任何控制流与返回值约定（成功仍为 `"ok"`）。
+- **改动**：`use` 列表加入 `ConfigError`；`update_server_config` 与 `switch_server_config` 的 `"配置不存在"` 字面量改为 `ConfigError::ConfigNotFound.to_string()`，其余 `e.to_string()` 保持原样。
+- **目的**：让返回给界面的英文句子成为稳定的翻译 key。**注意翻译发生在 Dart 侧**（见下），不要在这里调用 `crate::client::translate`：`src/lang.rs:155` 的 `translate` 带 `#[cfg(not(any(target_os = "android", target_os = "ios")))]`，移动端没有该函数，Rust 侧翻译会直接让 iOS / Android 构建失败（E0425）。
+- **兼容性**：只替换字面量，不改任何控制流与返回值约定（成功仍为 `"ok"`）。
 
 ### src/ui.rs（sciter 遗留接口）
 
@@ -196,7 +196,8 @@
 
 ### flutter/lib/common/widgets/server_config_dialog.dart
 
-- **改动**：构造 `ServerConfigCard` 时接入 `onSetDefault`：调用 `state.setDefault(item.id)`，成功 `refresh()` + `showToast(translate('Successful'))`，失败 `showToast(err)`。
+- **改动**：构造 `ServerConfigCard` 时接入 `onSetDefault`：调用 `state.setDefault(item.id)`，成功 `refresh()` + `showToast(translate('Successful'))`，失败 `showToast(translate(err))`。其余四处 `showToast(err)`（编辑提交 / 删除 / 移动 / 切换）同样包上 `translate`。
+- **目的**：后端返回的是英文句子，由 Dart 侧的 `translate` 按语言回退——`translate` 在 `src/lang.rs` 里的 Rust 版本被 `#[cfg]` 排除在移动端之外，放在展示层翻译才能全平台一致。
 - **兼容性**：与既有 `onSwitch` / `_move` 同构的追加分支。
 
 ### flutter/lib/web/bridge.dart
@@ -289,6 +290,6 @@ libyuv 上游 tag 时，下列补丁需随上游改动重新核对或 rebase。
 20. `src/core_main.rs` — 确认 `--import-toml-config` 分支内的 `is_cli_setting_change_disabled()` 检查、末尾 `publish_imported_store()` 与退出码 `5` 映射仍在。
 21. `src/config_import/**` — 确认第二批改动的判定逻辑仍在（`toml-import-source` 记录式跳过、逐字段合并、写入前校验、`Option<bool>`、`BTreeMap`），以及与 `docs/toml-config-import.md` 的描述一致。
 22. `libs/hbb_common/src/config.rs` — 确认 `set_default_config` 仍走「校验存在 + `promote_default` 置顶 + `save()`」，以及 `ConfigError` / `SwitchError` 的英文 `#[error(...)]` 文案未被上游改回。
-23. `src/ui_interface.rs` — 确认 `translate_server_config_error` helper 与六处调用、两处 `ConfigError::ConfigNotFound` 仍在。
+23. `src/ui_interface.rs` — 确认两处 `ConfigError::ConfigNotFound` 仍在，且没有引入 `crate::client::translate`（移动端不可用，会导致 E0425）；翻译统一由 Dart 侧 `translate(err)` 承担。
 24. `src/lang/template.rs` — 确认第三批 18 个错误文案 key 与 `Move up` / `Move down` 仍在，且 `Set as default` 未被上游移除。
 25. `flutter/lib/web/bridge.dart` — 确认 12 个多服务器接口仍在；上游若为该类的接口补了实现，需合并而不是简单覆盖。
