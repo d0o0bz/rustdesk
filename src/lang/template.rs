@@ -782,5 +782,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Low power mode", ""),
         ("Enable low-power mode on dual-GPU Macs", ""),
         ("low_power_mode_tip", ""),
+        ("Open config folder", ""),
     ].iter().cloned().collect();
 }

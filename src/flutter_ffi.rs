@@ -3069,6 +3069,10 @@ pub fn main_get_auto_switch_enabled() -> bool {
     get_auto_switch_enabled()
 }
 
+pub fn main_get_server_config_dir() -> String {
+    get_server_config_dir()
+}
+
 pub fn main_set_auto_switch_enabled(enabled: bool) {
     set_auto_switch_enabled(enabled)
 }

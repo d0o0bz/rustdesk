@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/server_config_model.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'server_config_widgets.dart';
 
@@ -187,6 +188,16 @@ Future<void> showServerConfigManager(
       title: Row(
         children: [
           Expanded(child: Text(translate('Multiple server config'))),
+          if (isDesktop)
+            IconButton(
+              icon: const Icon(Icons.folder_open),
+              tooltip: translate('Open config folder'),
+              onPressed: () async {
+                final dir = await bind.mainGetServerConfigDir();
+                if (dir.isEmpty) return;
+                await launchUrl(Uri.file(dir));
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: translate('Add server config'),

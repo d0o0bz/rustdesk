@@ -783,5 +783,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Low power mode", "低功耗模式"),
         ("Enable low-power mode on dual-GPU Macs", "在双显卡 Mac 上启用低功耗模式"),
         ("low_power_mode_tip", "针对双显卡 Mac：通过降低采集帧率与分辨率并禁用硬件编解码，减少发热与能耗，避免唤醒独立显卡。在新连接或重启后生效，CPU 占用会升高。"),
+        ("Open config folder", "打开配置文件所在目录"),
     ].iter().cloned().collect();
 }

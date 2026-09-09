@@ -2031,6 +2031,11 @@ pub fn get_auto_switch_enabled() -> bool {
     auto_switch_enabled()
 }
 
+/// 多服务器配置文件所在目录，供界面直接打开。
+pub fn get_server_config_dir() -> String {
+    MultiServerStore::dir().to_string_lossy().to_string()
+}
+
 pub fn set_auto_switch_enabled(enabled: bool) {
     // Goes through set_option instead of Config::set_option so that the value
     // reaches the service process over ipc and survives a service restart.
