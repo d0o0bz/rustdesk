@@ -698,7 +698,17 @@ mod tests {
     use super::*;
     #[test]
     fn test() {
-        let mut capture_mag = CapturerMag::new((0, 0), 1920, 1080).unwrap();
+        // The captured rect must fit the virtual screen, whose size is not known
+        // up front (CI runners have been 1024x768 as well as 1920x1080).
+        let (x, y, width, height) = unsafe {
+            (
+                GetSystemMetrics(SM_XVIRTUALSCREEN),
+                GetSystemMetrics(SM_YVIRTUALSCREEN),
+                GetSystemMetrics(SM_CXVIRTUALSCREEN) as usize,
+                GetSystemMetrics(SM_CYVIRTUALSCREEN) as usize,
+            )
+        };
+        let mut capture_mag = CapturerMag::new((x, y), width, height).unwrap();
         capture_mag.exclude("", "RustDeskPrivacyWindow").unwrap();
         std::thread::sleep(std::time::Duration::from_millis(1000 * 10));
         let mut data = Vec::new();
