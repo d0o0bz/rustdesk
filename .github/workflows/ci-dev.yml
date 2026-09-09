@@ -150,7 +150,10 @@ jobs:
 
     - name: Install vcpkg dependencies
       env:
-        VCPKG_DEFAULT_HOST_TRIPLET: ${{ runner.os == 'Windows' && 'x64-windows-static' || '' }}
+        # An empty value is not the same as unset: vcpkg takes it as a triplet name and fails
+        # with "Invalid triplet: ". The Linux run has to name one, x64-linux is what
+        # docker/build-flutter.sh and docker/check-flutter.sh already install.
+        VCPKG_DEFAULT_HOST_TRIPLET: ${{ runner.os == 'Windows' && 'x64-windows-static' || 'x64-linux' }}
       run: |
         if [ "$RUNNER_OS" = "Windows" ]; then
           if ! $VCPKG_ROOT/vcpkg install --triplet x64-windows-static --x-install-root="$VCPKG_ROOT/installed"; then
@@ -251,7 +254,11 @@ jobs:
             CARGO_TEST_OPTIONS="--lib --bin ${PROJECT_NAME}"
             ;;
           *)
-            CARGO_TEST_OPTIONS="--workspace --no-fail-fast -- --skip test_get_cursor_pos --skip test_get_key_state"
+            # The portable packer is left out: it is a release packaging tool that embeds
+            # app_metadata.toml, which libs/portable/generate.py writes at packaging time and
+            # which a clean checkout does not have, so it cannot be compiled as part of a
+            # workspace run.
+            CARGO_TEST_OPTIONS="--workspace --exclude rustdesk-portable-packer --no-fail-fast -- --skip test_get_cursor_pos --skip test_get_key_state"
             ;;
         esac;
 
