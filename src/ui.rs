@@ -516,14 +516,16 @@ impl UI {
     }
 
     fn switch_to_config(&self, id: String) -> String {
-        use hbb_common::config::{ConfigManager, ManualSwitcher, ServerConfigRepository};
+        use hbb_common::config::{
+            ConfigError, ConfigManager, ManualSwitcher, ServerConfigRepository,
+        };
         if let Some(config) = ServerConfigRepository::find_by_id(&id) {
             match ManualSwitcher::switch(&config) {
                 Ok(()) => "ok".to_string(),
                 Err(e) => e.to_string(),
             }
         } else {
-            "配置不存在".to_string()
+            ConfigError::ConfigNotFound.to_string()
         }
     }
 

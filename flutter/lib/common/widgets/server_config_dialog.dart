@@ -286,6 +286,15 @@ Future<void> showServerConfigManager(
                             ? translate('Failed')
                             : translate('Successful'));
                       },
+                      onSetDefault: () async {
+                        final err = await state.setDefault(item.id);
+                        if (err == null) {
+                          refresh();
+                          showToast(translate('Successful'));
+                        } else {
+                          showToast(err);
+                        }
+                      },
                       onMoveUp: index <= 1
                           ? null
                           : () => _move(item.id, index - 1),

@@ -1819,10 +1819,16 @@ mod tests {
 
 // dec: 多配置支持 - 暴露给 Flutter UI 的 glue 层，薄封装 ConfigManager 等已有能力
 use hbb_common::config::{
-    auto_switch_enabled, ConfigManager, ManualSwitcher, MultiServerStore, ServerConfig,
-    ServerConfigRepository, SuppressDefaultPromotion, OPTION_AUTO_SWITCH_ENABLED,
+    auto_switch_enabled, ConfigError, ConfigManager, ManualSwitcher, MultiServerStore,
+    ServerConfig, ServerConfigRepository, SuppressDefaultPromotion, OPTION_AUTO_SWITCH_ENABLED,
     OPTION_MULTI_SERVER_STORE, SERVER_OPTION_KEYS,
 };
+
+/// The server config errors are English sentences that double as translation keys, so this is
+/// what keeps them from reaching an English user verbatim once a translation exists.
+fn translate_server_config_error(message: String) -> String {
+    crate::client::translate(message)
+}
 
 fn server_config_to_json(config: &ServerConfig) -> serde_json::Value {
     serde_json::json!({
@@ -1904,7 +1910,7 @@ pub fn add_server_config(
             publish_server_configs();
             "ok".to_string()
         }
-        Err(e) => e.to_string(),
+        Err(e) => translate_server_config_error(e.to_string()),
     }
 }
 
@@ -1923,7 +1929,9 @@ pub fn update_server_config(
     let is_current = ServerConfigRepository::current_id().as_deref() == Some(id.as_str());
     let mut config = match ServerConfigRepository::find_by_id(&id) {
         Some(c) => c,
-        None => return "配置不存在".to_string(),
+        None => {
+            return translate_server_config_error(ConfigError::ConfigNotFound.to_string());
+        }
     };
     config.name = name;
     config.id_server = id_server;
@@ -1956,7 +1964,7 @@ pub fn update_server_config(
             publish_server_configs();
             "ok".to_string()
         }
-        Err(e) => e.to_string(),
+        Err(e) => translate_server_config_error(e.to_string()),
     }
 }
 
@@ -1975,17 +1983,19 @@ pub fn delete_server_config(id: String) -> String {
             publish_server_configs();
             "ok".to_string()
         }
-        Err(e) => e.to_string(),
+        Err(e) => translate_server_config_error(e.to_string()),
     }
 }
 
 pub fn switch_server_config(id: String) -> String {
     let config = match ServerConfigRepository::find_by_id(&id) {
         Some(config) => config,
-        None => return "配置不存在".to_string(),
+        None => {
+            return translate_server_config_error(ConfigError::ConfigNotFound.to_string());
+        }
     };
     if let Err(e) = ManualSwitcher::switch(&config) {
-        return e.to_string();
+        return translate_server_config_error(e.to_string());
     }
     // ManualSwitcher only records the id. The connection reads these options, and it lives
     // in the service process, so go through set_option, which pushes them over ipc and
@@ -2011,7 +2021,7 @@ pub fn set_default_server_config(id: String) -> String {
             publish_server_configs();
             "ok".to_string()
         }
-        Err(e) => e.to_string(),
+        Err(e) => translate_server_config_error(e.to_string()),
     }
 }
 
@@ -2023,7 +2033,7 @@ pub fn move_server_config(id: String, new_index: usize) -> String {
             publish_server_configs();
             "ok".to_string()
         }
-        Err(e) => e.to_string(),
+        Err(e) => translate_server_config_error(e.to_string()),
     }
 }
 

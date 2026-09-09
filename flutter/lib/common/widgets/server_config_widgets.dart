@@ -45,6 +45,7 @@ class ServerConfigCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onCheck;
+  final VoidCallback onSetDefault;
   final VoidCallback? onMoveUp;
   final VoidCallback? onMoveDown;
 
@@ -56,6 +57,7 @@ class ServerConfigCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onCheck,
+    required this.onSetDefault,
     this.onMoveUp,
     this.onMoveDown,
   }) : super(key: key);
@@ -155,6 +157,12 @@ class ServerConfigCard extends StatelessWidget {
                     onPressed: onMoveDown,
                   ),
                 ],
+                if (!config.isDefault)
+                  IconButton(
+                    icon: const Icon(Icons.star_border_outlined, size: 18),
+                    tooltip: translate('Set as default'),
+                    onPressed: onSetDefault,
+                  ),
                 IconButton(
                   icon: const Icon(Icons.network_check, size: 18),
                   tooltip: translate('Check availability'),

@@ -169,6 +169,47 @@
 - **目的**：修正"配了但静默不生效"与"写入后配置被写坏"两类缺陷，逐条说明见 `docs/toml-config-import.md`。
 - **兼容性**：**含行为变更**——布尔 `false` 现在写入 `"N"`（此前等同未指定）；缺少 `name` / `id_server` 或带非法端口的服务器条目会被拒绝（退出码 5）而不是入库；同一份文件里重复的 `id` / `id_server` 会被拒绝而不是静默塌缩。现有部署若依赖旧行为，升级前需先检查 toml。
 
+## 多服务器配置（第三批：设为默认 / 国际化 / Web）
+
+### libs/hbb_common/src/config.rs（子仓库）
+
+- **改动**：`ConfigManager::set_default_config` 由「只翻转 `is_default`」改为「校验 id 存在（`ConfigError::ConfigNotFound`）+ 复用 `ServerConfigRepository::promote_default` 置顶 + `save()`」；`ConfigError` / `SwitchError` 的 `#[error(...)]` 与 `ServerConfig::validate`、`ConfigValidator::validate_name` / `validate_server_address`、`ManualSwitcher::switch` 的中文文案改为英文句子；`InvalidFormat` 与 `ConfigUnavailable` 的 `Display` 由「前缀: {0}」改为只输出 `{0}`；末尾单测新增 `test_promote_default_pins_to_top` 与 `test_set_default_config_rejects_unknown_id`，并同步更新 `test_config_error_display` 的断言。
+- **目的**：设置默认此前不置顶，与 `sync_from_active_options` 的 `promote_default` 行为不一致，会让默认项落在列表中段——而弹窗的拖拽守卫与卡片的上下移按钮都假设默认项固定在 index 0。错误文案原先是中文硬编码，英文用户会直接看到中文 toast；`Display` 改为输出整句英文后，文案本身即可作为 `translate` 的 key。
+- **兼容性**：`set_default_config` 签名与返回类型不变，唯一调用方是 `src/ui_interface.rs`；`promote_default` 为模块私有，行为与同步路径一致。`InvalidFormat` / `ConfigUnavailable` 的 `Display` 去掉前缀属**行为变更**，仅影响展示文案，不影响控制流。
+
+### src/ui_interface.rs
+
+- **改动**：`use` 列表加入 `ConfigError`；新增私有 `translate_server_config_error(String)`（内部 `crate::client::translate`）；`add/update/delete/switch/set_default/move` 六处 `e.to_string()` 改为经该 helper 输出；`update_server_config` 与 `switch_server_config` 的 `"配置不存在"` 字面量改为 `ConfigError::ConfigNotFound.to_string()` 经 helper 输出。
+- **目的**：错误文案经 `translate` 后按语言回退，英文用户看到英文、中文用户看到中文。
+- **兼容性**：只对返回给 UI 的字符串做包一层，不改任何控制流与返回值约定（成功仍为 `"ok"`）。
+
+### src/ui.rs（sciter 遗留接口）
+
+- **改动**：`switch_to_config` 的 `"配置不存在"` 改为 `ConfigError::ConfigNotFound.to_string()`，`use` 列表加入 `ConfigError`。
+- **兼容性**：仅替换字面量，其余分支不变。
+
+### flutter/lib/common/widgets/server_config_widgets.dart
+
+- **改动**：`ServerConfigCard` 新增必填 `onSetDefault` 回调；操作区在「检测」按钮前插入 `Icons.star_border_outlined` 图标按钮（tooltip `Set as default`），仅当 `!config.isDefault` 显示。
+- **目的**：此前 `setDefault` 链路（Rust / FFI / Dart model）已就绪但没有任何 UI 入口，卡片只能显示 `Default` 标签、无法设置。
+- **兼容性**：仅新增回调与一个条件渲染的按钮。
+
+### flutter/lib/common/widgets/server_config_dialog.dart
+
+- **改动**：构造 `ServerConfigCard` 时接入 `onSetDefault`：调用 `state.setDefault(item.id)`，成功 `refresh()` + `showToast(translate('Successful'))`，失败 `showToast(err)`。
+- **兼容性**：与既有 `onSwitch` / `_move` 同构的追加分支。
+
+### flutter/lib/web/bridge.dart
+
+- **改动**：`class RustdeskImpl` 内新增 12 个多服务器接口与 5 个私有 helper；列表以 JSON 存于 `option:flutter:local` 的 `multi-server-configs`，切换 / 编辑在用项时写回 `custom-rendezvous-server` / `relay-server` / `api-server` / `key` 四个 option；自动开关存于 `auto-switch-enabled`；`mainCheckServerConfig` 返回 `'null'`、`mainGetServerConfigDir` 返回空串。
+- **目的**：Web 端此前完全没有这些方法的实现，`bind.mainGetAllServerConfigs()` 等调用在 Web 构建里无法解析。
+- **兼容性**：纯新增方法，不动既有实现。Web 上无 TCP 探测能力，可用性一律保持「未检测」。
+
+### src/lang/template.rs 及 src/lang/*.rs
+
+- **改动**：末尾追加 18 个新 key（`Set as default` 之外的 17 条为错误文案英文句子：`Config name is required`、`Config name cannot exceed 50 characters`、`ID server address is required`、`Server address is required`、`Invalid ID server port`、`Invalid relay server port`、`Duplicate config name`、`This ID server address already exists`、`Maximum of 5 configs reached`、`The last config cannot be deleted`、`The default config cannot be deleted`、`The default config is pinned to the top`、`Invalid priority position`、`Config not found`、`The ID server is unreachable`、`Disconnect the remote session before switching config`、`Switching is protected, try again later`）；`cn.rs` / `tw.rs` 填中文译文，其余语言留空（回退英文）。另补登此前遗漏的 `Move up` / `Move down`（界面在用但从未登记，`cn` / `tw` 填 `上移` / `下移`），并把仓库中已存在但 `tw` 为空的 `Set as default` 补上 `設為預設`。
+- **兼容性**：纯 additive 条目，不动任何既有非空翻译。
+
 ## vcpkg overlay port 补丁（aom / libyuv）
 
 这两个 overlay port 位于 `res/vcpkg/aom/`、`res/vcpkg/libyuv/`，通过 `vcpkg_from_git` 取源码。
@@ -247,3 +288,7 @@ libyuv 上游 tag 时，下列补丁需随上游改动重新核对或 rebase。
 19. `libs/hbb_common/src/config.rs` — 确认 `Config::get_stored_option` / `get_stored_options` 与 `MultiServerStore::try_save` 仍在，且 `save()` 仍转调 `try_save()`。
 20. `src/core_main.rs` — 确认 `--import-toml-config` 分支内的 `is_cli_setting_change_disabled()` 检查、末尾 `publish_imported_store()` 与退出码 `5` 映射仍在。
 21. `src/config_import/**` — 确认第二批改动的判定逻辑仍在（`toml-import-source` 记录式跳过、逐字段合并、写入前校验、`Option<bool>`、`BTreeMap`），以及与 `docs/toml-config-import.md` 的描述一致。
+22. `libs/hbb_common/src/config.rs` — 确认 `set_default_config` 仍走「校验存在 + `promote_default` 置顶 + `save()`」，以及 `ConfigError` / `SwitchError` 的英文 `#[error(...)]` 文案未被上游改回。
+23. `src/ui_interface.rs` — 确认 `translate_server_config_error` helper 与六处调用、两处 `ConfigError::ConfigNotFound` 仍在。
+24. `src/lang/template.rs` — 确认第三批 18 个错误文案 key 与 `Move up` / `Move down` 仍在，且 `Set as default` 未被上游移除。
+25. `flutter/lib/web/bridge.dart` — 确认 12 个多服务器接口仍在；上游若为该类的接口补了实现，需合并而不是简单覆盖。

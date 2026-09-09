@@ -791,6 +791,277 @@ class RustdeskImpl {
     return Future.value('');
   }
 
+  // dec: 多配置支持 - Web 端没有 Rust 侧的独立存储，列表放在本地 flutter option，
+  // 生效服务器仍由那四个 option 决定，与原生端保持一致。
+  static const _serverConfigsKey = 'multi-server-configs';
+  static const _autoSwitchKey = 'auto-switch-enabled';
+  static const _maxServerConfigs = 5;
+
+  List<Map<String, dynamic>> _loadServerConfigs() {
+    final raw = getLocalFlutterOption(k: _serverConfigsKey);
+    if (raw.isEmpty) return <Map<String, dynamic>>[];
+    try {
+      return (jsonDecode(raw) as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    } catch (e) {
+      debugPrint('load web server configs failed: $e');
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  Future<void> _saveServerConfigs(List<Map<String, dynamic>> configs) {
+    return setLocalFlutterOption(k: _serverConfigsKey, v: jsonEncode(configs));
+  }
+
+  /// 生效的 ID 服务器，去掉端口后与列表条目比较。
+  String _currentIdServer() =>
+      mainGetOptionSync(key: 'custom-rendezvous-server').split(':').first;
+
+  Future<void> _applyServerConfig(Map<String, dynamic> config) async {
+    final idServer = config['id_server'] as String? ?? '';
+    final idPort = config['id_port'] as int? ?? 0;
+    await mainSetOption(
+        key: 'custom-rendezvous-server',
+        value: idServer.contains(':') ? idServer : '$idServer:$idPort');
+    await mainSetOption(
+        key: 'relay-server', value: config['relay_server'] as String? ?? '');
+    await mainSetOption(
+        key: 'api-server', value: config['api_server'] as String? ?? '');
+    await mainSetOption(key: 'key', value: config['key'] as String? ?? '');
+  }
+
+  Map<String, dynamic> _serverConfigEntry({
+    required String id,
+    required String name,
+    required String idServer,
+    required int idPort,
+    required String relayServer,
+    required int relayPort,
+    required String apiServer,
+    required String key,
+    required bool isDefault,
+  }) {
+    return {
+      'id': id,
+      'name': name,
+      'id_server': idServer,
+      'id_port': idPort,
+      'relay_server': relayServer,
+      'relay_port': relayPort > 0 ? relayPort : null,
+      'api_server': apiServer,
+      'key': key,
+      'is_default': isDefault,
+      'avg_latency': null,
+    };
+  }
+
+  /// 与 Rust 侧 `ServerConfig::validate` 一致的英文文案，空翻译时原样展示。
+  String _validateServerConfigInput({
+    required String name,
+    required String idServer,
+    required int idPort,
+    required int relayPort,
+    required List<Map<String, dynamic>> configs,
+    String excludeId = '',
+  }) {
+    if (name.isEmpty) return 'Config name is required';
+    if (name.length > 50) return 'Config name cannot exceed 50 characters';
+    if (idServer.isEmpty) return 'ID server address is required';
+    if (idPort <= 0 || idPort > 65535) return 'Invalid ID server port';
+    if (relayPort > 65535) return 'Invalid relay server port';
+    for (final c in configs) {
+      if (c['id'] == excludeId) continue;
+      if (c['name'] == name) return 'Duplicate config name';
+      if (c['id_server'] == idServer) {
+        return 'This ID server address already exists';
+      }
+    }
+    return '';
+  }
+
+  Future<String> mainGetAllServerConfigs({dynamic hint}) {
+    final inUse = _currentIdServer();
+    final configs = _loadServerConfigs().map((c) {
+      final entry = Map<String, dynamic>.from(c);
+      entry['is_current'] = inUse.isNotEmpty && entry['id_server'] == inUse;
+      return entry;
+    }).toList();
+    return Future.value(jsonEncode(configs));
+  }
+
+  Future<String> mainGetCurrentServerConfig({dynamic hint}) {
+    final inUse = _currentIdServer();
+    final configs = _loadServerConfigs().where((c) => c['id_server'] == inUse);
+    return Future.value(configs.isEmpty ? 'null' : jsonEncode(configs.first));
+  }
+
+  Future<String> mainAddServerConfig({
+    required String name,
+    required String idServer,
+    required int idPort,
+    required String relayServer,
+    required int relayPort,
+    required String apiServer,
+    required String key,
+    dynamic hint,
+  }) async {
+    final configs = _loadServerConfigs();
+    if (configs.length >= _maxServerConfigs) {
+      return 'Maximum of 5 configs reached';
+    }
+    final err = _validateServerConfigInput(
+      name: name,
+      idServer: idServer,
+      idPort: idPort,
+      relayPort: relayPort,
+      configs: configs,
+    );
+    if (err.isNotEmpty) return err;
+    configs.add(_serverConfigEntry(
+      id: const Uuid().v4(),
+      name: name,
+      idServer: idServer,
+      idPort: idPort,
+      relayServer: relayServer,
+      relayPort: relayPort,
+      apiServer: apiServer,
+      key: key,
+      isDefault: configs.isEmpty,
+    ));
+    await _saveServerConfigs(configs);
+    return 'ok';
+  }
+
+  Future<String> mainUpdateServerConfig({
+    required String id,
+    required String name,
+    required String idServer,
+    required int idPort,
+    required String relayServer,
+    required int relayPort,
+    required String apiServer,
+    required String key,
+    dynamic hint,
+  }) async {
+    final configs = _loadServerConfigs();
+    final index = configs.indexWhere((c) => c['id'] == id);
+    if (index < 0) return 'Config not found';
+    final err = _validateServerConfigInput(
+      name: name,
+      idServer: idServer,
+      idPort: idPort,
+      relayPort: relayPort,
+      configs: configs,
+      excludeId: id,
+    );
+    if (err.isNotEmpty) return err;
+    final wasInUse = _currentIdServer() == configs[index]['id_server'];
+    configs[index] = _serverConfigEntry(
+      id: id,
+      name: name,
+      idServer: idServer,
+      idPort: idPort,
+      relayServer: relayServer,
+      relayPort: relayPort,
+      apiServer: apiServer,
+      key: key,
+      isDefault: configs[index]['is_default'] == true,
+    );
+    await _saveServerConfigs(configs);
+    if (wasInUse) await _applyServerConfig(configs[index]);
+    return 'ok';
+  }
+
+  Future<String> mainDeleteServerConfig({required String id, dynamic hint}) async {
+    final configs = _loadServerConfigs();
+    final index = configs.indexWhere((c) => c['id'] == id);
+    if (index < 0) return 'Config not found';
+    if (configs.length <= 1) return 'The last config cannot be deleted';
+    if (configs[index]['is_default'] == true) {
+      return 'The default config cannot be deleted';
+    }
+    final wasInUse = _currentIdServer() == configs[index]['id_server'];
+    configs.removeAt(index);
+    await _saveServerConfigs(configs);
+    if (wasInUse) {
+      for (final key in const [
+        'custom-rendezvous-server',
+        'relay-server',
+        'api-server',
+        'key',
+      ]) {
+        await mainSetOption(key: key, value: '');
+      }
+    }
+    return 'ok';
+  }
+
+  Future<String> mainSwitchServerConfig({required String id, dynamic hint}) async {
+    final configs = _loadServerConfigs();
+    final index = configs.indexWhere((c) => c['id'] == id);
+    if (index < 0) return 'Config not found';
+    await _applyServerConfig(configs[index]);
+    return 'ok';
+  }
+
+  Future<String> mainSetDefaultServerConfig({
+    required String id,
+    dynamic hint,
+  }) async {
+    final configs = _loadServerConfigs();
+    final index = configs.indexWhere((c) => c['id'] == id);
+    if (index < 0) return 'Config not found';
+    final promoted = configs.removeAt(index);
+    for (final c in configs) {
+      c['is_default'] = false;
+    }
+    promoted['is_default'] = true;
+    configs.insert(0, promoted);
+    await _saveServerConfigs(configs);
+    return 'ok';
+  }
+
+  Future<String> mainMoveServerConfig({
+    required String id,
+    required int newIndex,
+    dynamic hint,
+  }) async {
+    final configs = _loadServerConfigs();
+    final index = configs.indexWhere((c) => c['id'] == id);
+    if (index < 0) return 'Config not found';
+    if (configs[index]['is_default'] == true) {
+      return 'The default config is pinned to the top';
+    }
+    if (newIndex <= 0 || newIndex >= configs.length) {
+      return 'Invalid priority position';
+    }
+    if (index == newIndex) return 'ok';
+    configs.insert(newIndex, configs.removeAt(index));
+    await _saveServerConfigs(configs);
+    return 'ok';
+  }
+
+  /// Web 上无法建立 TCP 探测，返回空让界面保持「未检测」状态。
+  Future<String> mainCheckServerConfig({required String id, dynamic hint}) {
+    return Future.value('null');
+  }
+
+  Future<bool> mainGetAutoSwitchEnabled({dynamic hint}) {
+    return Future.value(
+        getLocalFlutterOption(k: _autoSwitchKey) == 'Y');
+  }
+
+  Future<void> mainSetAutoSwitchEnabled(
+      {required bool enabled, dynamic hint}) {
+    return setLocalFlutterOption(
+        k: _autoSwitchKey, v: enabled ? 'Y' : 'N');
+  }
+
+  Future<String> mainGetServerConfigDir({dynamic hint}) {
+    return Future.value('');
+  }
+
   Future<void> mainSetSocks(
       {required String proxy,
       required String username,
