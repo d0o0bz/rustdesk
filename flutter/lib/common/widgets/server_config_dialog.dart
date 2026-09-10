@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/server_config_model.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'server_config_widgets.dart';
 
@@ -217,7 +216,7 @@ Future<void> showServerConfigManager(
               onPressed: () async {
                 final dir = await bind.mainGetServerConfigDir();
                 if (dir.isEmpty) return;
-                await launchUrl(Uri.file(dir));
+                await openDirectory(dir);
               },
             ),
           IconButton(

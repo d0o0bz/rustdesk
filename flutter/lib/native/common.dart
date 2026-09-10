@@ -15,3 +15,26 @@ String get screenInfo_ => '';
 final isWebOnWindows_ = false;
 final isWebOnLinux_ = false;
 final isWebOnMacOS_ = false;
+
+/// Opens a local directory in the system file manager.
+///
+/// `launchUrl(Uri.file(..))` ends up in `ShellExecuteW` on Windows, which waits
+/// for the shell to answer over DDE. The shell is not always up when the app is
+/// started with the session, and that wait blocks the flutter ui thread.
+/// Starting the file manager as a child process never waits on the shell.
+Future<bool> openDirectoryImpl(String path) async {
+  if (path.isEmpty) {
+    return false;
+  }
+  final exe = Platform.isWindows
+      ? 'explorer.exe'
+      : Platform.isMacOS
+          ? 'open'
+          : 'xdg-open';
+  try {
+    await Process.start(exe, [path]);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}

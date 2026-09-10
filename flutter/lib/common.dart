@@ -65,6 +65,17 @@ var isMobile = isAndroid || isIOS;
 var version = '';
 int androidVersion = 0;
 
+/// Opens a local directory in the system file manager.
+///
+/// See `openDirectoryImpl` for why this does not go through `launchUrl`.
+Future<bool> openDirectory(String path) async {
+  final ok = await openDirectoryImpl(path);
+  if (!ok) {
+    showToast(translate('Failed'));
+  }
+  return ok;
+}
+
 // Only used on Linux.
 // `windowManager.setResizable(false)` will reset the window size to the default size on Linux.
 // https://stackoverflow.com/questions/8193613/gtk-window-resize-disable-without-going-back-to-default

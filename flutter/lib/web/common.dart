@@ -19,3 +19,6 @@ final _localOs = js.context.callMethod('getByName', ['local_os', '']);
 final isWebOnWindows_ = _localOs == kPeerPlatformWindows;
 final isWebOnLinux_ = _localOs == kPeerPlatformLinux;
 final isWebOnMacOS_ = _localOs == kPeerPlatformMacOS;
+
+/// Web has no local file manager to open.
+Future<bool> openDirectoryImpl(String path) async => false;
