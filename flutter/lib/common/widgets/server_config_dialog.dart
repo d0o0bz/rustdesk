@@ -7,11 +7,31 @@ import 'package:url_launcher/url_launcher.dart';
 import 'server_config_widgets.dart';
 
 /// 多服务器配置管理弹窗，桌面端与移动端共用。
+///
+/// [requireElevation] makes adding, editing and deleting ask for the system credential
+/// first. It is for entries that open this without going through the settings, such as
+/// the status bar; the settings page is already a guarded place.
 Future<void> showServerConfigManager(
-  OverlayDialogManager dialogManager,
-) async {
+  OverlayDialogManager dialogManager, {
+  bool requireElevation = false,
+}) async {
   final state = ServerConfigState();
   await state.load();
+
+  // Outside the builder below, which reruns on every refresh: the unlock has to survive
+  // those reruns, or every single change would ask again.
+  var locked = requireElevation && !isWeb && !isMobile && bind.mainIsInstalled();
+
+  // One prompt covers every change made while the dialog stays open, the same way the
+  // lock on the security and network settings pages does.
+  Future<bool> ensureUnlocked() async {
+    if (!locked) return true;
+    if (await callMainCheckSuperUserPermission()) {
+      locked = false;
+      return true;
+    }
+    return false;
+  }
 
   dialogManager.show((setState, close, context) {
     void refresh() => setState(() {});
@@ -163,6 +183,8 @@ Future<void> showServerConfigManager(
         );
       });
       if (confirmed == true) {
+        // After the confirmation, so cancelling never raises a prompt.
+        if (!await ensureUnlocked()) return;
         final err = await state.delete(item.id);
         if (err == null) {
           refresh();
@@ -201,7 +223,10 @@ Future<void> showServerConfigManager(
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: translate('Add server config'),
-            onPressed: () => _showEditDialog(),
+            onPressed: () async {
+              if (!await ensureUnlocked()) return;
+              _showEditDialog();
+            },
           ),
         ],
       ),
@@ -277,7 +302,10 @@ Future<void> showServerConfigManager(
                           showToast(translate(err));
                         }
                       },
-                      onEdit: () => _showEditDialog(item),
+                      onEdit: () async {
+                        if (!await ensureUnlocked()) return;
+                        _showEditDialog(item);
+                      },
                       onDelete: () => _delete(item),
                       onCheck: () async {
                         final result = await state.check(item.id);

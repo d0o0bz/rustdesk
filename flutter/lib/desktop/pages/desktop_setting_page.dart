@@ -554,6 +554,7 @@ class _GeneralState extends State<_General> {
           'Check for software update on startup',
           kOptionEnableCheckUpdate,
           isServer: false,
+          defaultValue: false,
         ),
       if (showAutoUpdate)
         _OptionCheckBox(
@@ -2580,12 +2581,17 @@ Widget _OptionCheckBox(
   bool isServer = true,
   bool Function()? optGetter,
   Future<void> Function(String, bool)? optSetter,
+  // What an unset value means, for local options. `option2bool` reads an unset `enable-`
+  // key as enabled, so an option that starts out off has to name its default.
+  bool? defaultValue,
 }) {
   getOpt() => optGetter != null
       ? optGetter()
       : (isServer
           ? mainGetBoolOptionSync(key)
-          : mainGetLocalBoolOptionSync(key));
+          : defaultValue == null
+              ? mainGetLocalBoolOptionSync(key)
+              : mainGetLocalBoolOptionWithDefaultSync(key, defaultValue));
   bool value = getOpt();
   final isOptFixed = isOptionFixed(key);
   if (reverse) value = !value;

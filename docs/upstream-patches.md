@@ -239,6 +239,44 @@
 - **目的**：让用户能关掉状态栏这一项。
 - **兼容性**：纯 additive。注意 `option2bool`（`libs/hbb_common/src/config.rs:3962`）对非 `enable-` / `allow-` 前缀的 key 判 `value != "N"`，因此该 key 缺省为**开启**；`bool2option` 写 `Y` / `N`，开关可正常回读。状态栏侧通过 `mainGetLocalBoolOptionSync(kOptionShowServerInStatusBar)` 门控，关闭时把文本置空（条目不渲染），1 秒轮询内生效。
 
+## 第四批：更新检查默认关闭 / 状态栏服务器名 / 增删改提权
+
+### src/common.rs
+
+- **改动**：`check_software_update()` 在 `option2bool` 之前新增空值提前 `return`。
+- **目的**：`enable-check-update` 是 `enable-` 前缀，`option2bool`（`libs/hbb_common/src/config.rs:3962`）对 `enable-` 判 `value != "N"`，所以「从未设置」= 开启。改为默认关闭。
+- **影响面（有意保留）**：老用户的「开启」在磁盘上**就是空值**——`bool2option` 对 `enable-` 键写的是 `defaultOptionYes`（非定制客户端为 `""`），而 `LocalConfig::set_option` 对空串执行 `options.remove(&k)`（`libs/hbb_common/src/config.rs:3377-3380`），即与「从未设置」完全同态，无法区分。因此升级后会统一变为关闭，而不是只作用于新装用户。
+- **兼容性**：这是 Rust 侧唯一的读取点（调用方 `src/ui.rs:105`、`src/flutter_ffi.rs:1754 main_get_software_update_url`），只加一条提前 return。
+
+### flutter/lib/common.dart
+
+- **改动**：`bool2option` 的 `enable-` 例外列表加入 `kOptionEnableCheckUpdate`（与 `kOptionEnableUdpPunch` / `kOptionEnableIpv6Punch` 并列），使其走 `else` 分支的 `b ? 'Y' : 'N'`；新增 `mainGetLocalBoolOptionWithDefaultSync(key, defaultValue)`（空值回落到 `defaultValue`）。
+- **目的**：**写入必须与读取一起改**——若仍写 `defaultOptionYes`（空串），勾选「开启」会删掉该 key，回读又落回默认关闭，用户永远勾不上。
+- **兼容性**：不动 `option2bool`：Rust（`libs/hbb_common/src/config.rs:3962`）与 Dart（`common.dart:1625`）双侧语义必须保持一致，两处注释都写明了这一点。
+
+### flutter/lib/desktop/pages/desktop_setting_page.dart
+
+- **改动**：`_OptionCheckBox` 新增可选参数 `defaultValue`，`getOpt()` 在 local 分支下改调 `mainGetLocalBoolOptionWithDefaultSync`；「Check for software update on startup」（`other()` 内）调用点传 `defaultValue: false`。
+- **兼容性**：`defaultValue` 为 `null` 时行为完全不变，其余调用点不受影响。
+
+### flutter/lib/mobile/pages/settings_page.dart
+
+- **改动**：`checkUpdateOnStartup` 的读取改用 `mainGetLocalBoolOptionWithDefaultSync(kOptionEnableCheckUpdate, false)`。写入侧走同一个 `bool2option`，无需改动。
+- **目的**：否则移动端开关会与桌面端、与实际行为不一致（显示开但其实不检查）。
+
+### flutter/lib/desktop/pages/connection_page.dart
+
+- **改动**：`_currentServerText()` 改为 `_currentServerInfo()`，返回 `(label, detail)` record（项目 Dart SDK 约束 `^3.1.0`，可用）；新增 `final _currentServerDetail = ''.obs`；`currentServerWidget()` 改为块体，用 `Tooltip` 包在 `InkWell` **外层**（包内层会吞掉点击），`detail` 为空时不包；`updateStatus()` 同步更新两个 obs。
+- **目的**：状态栏只显示配置名称，悬停才给出 ID / 中继 / API 服务器地址。
+- **兼容性**：`label` 在未命中列表（走公共服务器）时仍回落到 `bind.mainGetRendezvousServer()`，**必须保留回落**——挂载条件是 `_currentServer.value.isNotEmpty`，空文本会让条目整个消失。`detail` 复用既有已登记的翻译 key `ID Server` / `Relay Server` / `API Server`，空字段不出行，**不展示 key**（敏感）。复用既有 1 秒轮询，未新增 Timer。
+
+### flutter/lib/common/widgets/server_config_dialog.dart
+
+- **改动**：`showServerConfigManager` 新增可选命名参数 `requireElevation`（默认 `false`）；新增 `locked` 与 `ensureUnlocked()`；拦截三处——新增按钮、卡片 `onEdit`、`_delete` 中确认对话框返回 `true` **之后**（取消不弹授权）；`connection_page.dart` 的点击传入 `requireElevation: true`。
+- **目的**：状态栏是无需进入设置页的便捷入口，增删改应要求系统授权（Windows UAC / Linux pkexec / macOS 管理员认证）。一次通过覆盖本次弹窗内后续操作，与 `_Safety` / `_Network` 页的 `locked` 模式一致。
+- **实现要点**：`dialogManager.show` 的 builder 在 `StatefulBuilder` 内（`common.dart:876-881`），**每次 `setState` 都会重跑**，所以 `locked` 必须声明在 `dialogManager.show` **之外**，否则一次 `refresh()` 后锁就复活了。
+- **兼容性**：默认 `false`，设置页（`desktop_setting_page.dart:1791`）与移动端（`mobile/pages/settings_page.dart:763`）入口行为完全不变；`!isWeb && !isMobile` 短路（移动端 `mainIsInstalled()` 恒 `false`、`check_super_user_permission()` 恒 `true`，Web 无提权概念）。切换 / 设为默认 / 上下移 / 自动切换开关不提权。卡片在 `ReorderableListView` 内，未做按钮置灰，避免干扰拖拽与既有按钮显隐逻辑。
+
 ## vcpkg overlay port 补丁（aom / libyuv）
 
 这两个 overlay port 位于 `res/vcpkg/aom/`、`res/vcpkg/libyuv/`，通过 `vcpkg_from_git` 取源码。
@@ -325,3 +363,7 @@ libyuv 上游 tag 时，下列补丁需随上游改动重新核对或 rebase。
 27. `flutter/lib/desktop/pages/connection_page.dart` — 确认 `OnlineStatusWidget` 的 `_currentServer` / `_hideServer` / `_currentServerText()` / `currentServerWidget()` 仍在；若上游重构了状态栏布局，需重新挂载并复核 `Flexible` 的合法性。
 28. `flutter/lib/consts.dart` 与 `flutter/lib/desktop/pages/desktop_setting_page.dart` — 确认 `kOptionShowServerInStatusBar` 与 `other()` 里的开关仍在；升级时若 `option2bool` 的前缀规则变了，需复核该开关的缺省值是否仍为开启。
 29. `src/lang/template.rs` — 确认 `Show current server in the status bar` 仍在。
+30. `src/common.rs` — 确认 `check_software_update()` 里的空值提前 `return` 仍在；上游若改了 `option2bool` 的 `enable-` 语义、或新增了 `enable-check-update` 的默认写入，需复核缺省是否仍为关闭。
+31. `flutter/lib/common.dart` — 确认 `bool2option` 里 `kOptionEnableCheckUpdate` 的例外仍在（去掉会导致用户勾不上「开启」），以及 `mainGetLocalBoolOptionWithDefaultSync` 仍在。
+32. `flutter/lib/desktop/pages/connection_page.dart` — 确认 `_currentServerInfo()` 仍返回 `(label, detail)` record、`_currentServerDetail` 与 `Tooltip` 仍在，且公共服务器场景的 label 回落未被去掉。
+33. `flutter/lib/common/widgets/server_config_dialog.dart` — 确认 `requireElevation` 与 `ensureUnlocked()` 的三处调用仍在，且 `locked` 仍声明在 `dialogManager.show` 之外（builder 每次 `setState` 都会重跑）。

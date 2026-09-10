@@ -945,6 +945,11 @@ pub fn check_software_update() {
         return;
     }
     let opt = LocalConfig::get_option(keys::OPTION_ENABLE_CHECK_UPDATE);
+    // `enable-check-update` is an `enable-` key, so `option2bool` reads the unset value as
+    // enabled. Checking for updates is opt in, so unset has to mean off here.
+    if opt.is_empty() {
+        return;
+    }
     if config::option2bool(keys::OPTION_ENABLE_CHECK_UPDATE, &opt) {
         std::thread::spawn(move || allow_err!(do_check_software_update()));
     }

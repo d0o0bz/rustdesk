@@ -37,6 +37,7 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
   final _svcStopped = Get.find<RxBool>(tag: 'stop-service');
   final _svcIsUsingPublicServer = true.obs;
   final _currentServer = ''.obs;
+  final _currentServerDetail = ''.obs;
   late final bool _hideServer;
   Timer? _updateTimer;
 
@@ -113,24 +114,31 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
           ),
         );
 
-    currentServerWidget() => InkWell(
-          onTap: () => showServerConfigManager(gFFI.dialogManager),
-          child: Row(
-            children: [
-              Icon(Icons.dns_outlined, size: em),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Text(
-                  _currentServer.value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      decoration: TextDecoration.underline, fontSize: em),
-                ),
+    currentServerWidget() {
+      final entry = InkWell(
+        onTap: () => showServerConfigManager(gFFI.dialogManager,
+            requireElevation: true),
+        child: Row(
+          children: [
+            Icon(Icons.dns_outlined, size: em),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                _currentServer.value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    decoration: TextDecoration.underline, fontSize: em),
               ),
-            ],
-          ),
-        ).marginOnly(left: em);
+            ),
+          ],
+        ),
+      );
+      // Outside the InkWell, or it swallows the tap.
+      final detail = _currentServerDetail.value;
+      return (detail.isEmpty ? entry : Tooltip(message: detail, child: entry))
+          .marginOnly(left: em);
+    }
 
     basicWidget() => Row(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -193,13 +201,14 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
     );
   }
 
-  /// The server in use as "name · host:port", or just the address when it is not one of the
-  /// stored configs, which is the case whenever the public servers are in use.
+  /// The server in use as its name, with the addresses kept for the tooltip, or just the
+  /// address when it is not one of the stored configs, which is the case whenever the
+  /// public servers are in use.
   ///
   /// The list is read instead of `mainGetCurrentServerConfig` because that one answers from
   /// the recorded `current_config_id`, which lags behind when the service fails over on its
   /// own, while the list marks the current entry from the option the connection uses.
-  Future<String> _currentServerText() async {
+  Future<({String label, String detail})> _currentServerInfo() async {
     try {
       final configs = jsonDecode(await bind.mainGetAllServerConfigs()) as List;
       for (final item in configs) {
@@ -213,16 +222,35 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
         final port = item['id_port'] as int? ?? 0;
         final address = host.contains(':') || port <= 0 ? host : '$host:$port';
         final name = (item['name'] as String? ?? '').trim();
-        return name.isEmpty ? address : '$name · $address';
+        final lines = <String>[
+          if (name.isNotEmpty) name,
+          '${translate('ID Server')}: $address',
+        ];
+        final relay = (item['relay_server'] as String? ?? '').trim();
+        if (relay.isNotEmpty) {
+          final relayPort = item['relay_port'] as int? ?? 0;
+          lines.add(relayPort > 0
+              ? '${translate('Relay Server')}: $relay:$relayPort'
+              : '${translate('Relay Server')}: $relay');
+        }
+        final api = (item['api_server'] as String? ?? '').trim();
+        if (api.isNotEmpty) {
+          lines.add('${translate('API Server')}: $api');
+        }
+        return (label: name.isEmpty ? address : name, detail: lines.join('\n'));
       }
     } catch (e) {
       debugPrint('read server configs failed: $e');
     }
     try {
-      return (await bind.mainGetRendezvousServer()).trim();
+      // Nothing beyond the address itself is known here, so there is no tooltip.
+      return (
+        label: (await bind.mainGetRendezvousServer()).trim(),
+        detail: ''
+      );
     } catch (e) {
       debugPrint('read rendezvous server failed: $e');
-      return '';
+      return (label: '', detail: '');
     }
   }
 
@@ -242,10 +270,15 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
     _svcIsUsingPublicServer.value = await bind.mainIsUsingPublicServer();
     // An empty text takes the entry out of the status bar, so switching the option off, or
     // hiding the server settings, leaves the bar exactly as it was before.
-    _currentServer.value = _hideServer ||
-            !mainGetLocalBoolOptionSync(kOptionShowServerInStatusBar)
-        ? ''
-        : await _currentServerText();
+    if (_hideServer ||
+        !mainGetLocalBoolOptionSync(kOptionShowServerInStatusBar)) {
+      _currentServer.value = '';
+      _currentServerDetail.value = '';
+    } else {
+      final info = await _currentServerInfo();
+      _currentServer.value = info.label;
+      _currentServerDetail.value = info.detail;
+    }
     try {
       stateGlobal.videoConnCount.value = status['video_conn_count'] as int;
     } catch (_) {}

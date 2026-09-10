@@ -1642,7 +1642,10 @@ String bool2option(String option, bool b) {
   String res;
   if (option.startsWith('enable-') &&
       option != kOptionEnableUdpPunch &&
-      option != kOptionEnableIpv6Punch) {
+      option != kOptionEnableIpv6Punch &&
+      // Writing `defaultOptionYes` here would store an empty value, which is the same as
+      // never having set the key at all, so turning it on could never stick.
+      option != kOptionEnableCheckUpdate) {
     res = b ? defaultOptionYes : 'N';
   } else if (option.startsWith('allow-') ||
       option == kOptionStopService ||
@@ -1675,6 +1678,17 @@ mainSetLocalBoolOption(String key, bool value) async {
 
 bool mainGetLocalBoolOptionSync(String key) {
   return option2bool(key, bind.mainGetLocalOption(key: key));
+}
+
+/// Same as [mainGetLocalBoolOptionSync], but for options whose default is not what
+/// [option2bool] says an unset value means. `enable-` keys read unset as enabled, so an
+/// option that is off until the user opts in has to name its default here.
+bool mainGetLocalBoolOptionWithDefaultSync(String key, bool defaultValue) {
+  final value = bind.mainGetLocalOption(key: key);
+  if (value.isEmpty) {
+    return defaultValue;
+  }
+  return option2bool(key, value);
 }
 
 bool mainGetPeerBoolOptionSync(String id, String key) {
