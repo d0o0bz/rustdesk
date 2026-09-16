@@ -328,6 +328,60 @@ libyuv 上游 tag 时，下列补丁需随上游改动重新核对或 rebase。
 - **兼容性**：改动集中在 install/导出规则与库类型，不改变功能代码。重 patch 时需确认上游
   `CMakeLists.txt` 结构与 `include/libyuv/*.h` 头路径未变。
 
+## 二开发布标识（与上游 release 区分）
+
+产品版本号（`Cargo.toml` / `res/*spec` / `res/PKGBUILD` / `appimage/*yml` / `flatpak/*json`）保持与上游同格式，
+"二开"这一身份只体现在发布 tag、Release 名与 build number 三处，避免触发各打包器对版本串的格式约束。
+
+### 发布 tag 带日期（无代码改动）
+
+- **做法**：正式发布打 `v<上游版本>-<日期>` 形式的 tag（如 `v1.4.9-20260916`），`flutter-tag.yml` 会用
+  `upload-tag: ${{ github.ref_name }}` 把它作为 `env.TAG_NAME`，Release 名即为该 tag。
+- **目的**：上游同类 release 的 tag 是 `v1.4.9` / `nightly`，加日期后可直接区分。
+- **兼容性**：tag 只进入产物名与 Release 名，产品版本字段完全不变，对 MSI / deb / rpm / PKGBUILD /
+  AppImage / macOS 零影响。
+- **约束**：`flutter-tag.yml` 与 `fdroid.yml` 只匹配 `v[0-9]+.[0-9]+.[0-9]+-[0-9]+` 这类**纯数字**后缀，
+  且 `fdroid.yml` 用 bash 算术解析该数字（前导零会被当成八进制而报错），所以日期必须写 `20260916`，
+  不能写 `0916`；也不能用 `-fork.1` 这类非数字后缀（不会触发构建）。
+
+### .github/workflows/flutter-nightly.yml
+
+- **改动**：新增 `prepare-tag` job 产出 `nightly-$(date -u +%Y%m%d)`，`run-flutter-nightly-build` 改为
+  `needs: prepare-tag` 并把该值传给 `upload-tag`（原为固定字符串 `"nightly"`）。
+- **目的**：让 nightly 也带日期，且不再挤在同一个滚动 tag 里。
+- **兼容性**：只改 nightly 的 tag 取值；`flutter-build.yml` 与其它调用方（`flutter-ci.yml` /
+  `flutter-ci-dev.yml` 不传 `upload-tag`）行为不变。
+
+### flutter/pubspec.yaml
+
+- **改动**：`version: 1.4.9+67` → `version: 1.4.9+20260916`（build number 用日期）。
+- **目的**：Android `versionCode` / iOS·macOS `CFBundleVersion` 随日期单调递增，同一版本号下的不同构建
+  可区分；且大于上游的 `+67`，Android 上会被判定为升级而非降级。
+- **兼容性**：只影响 build number；`versionName` 与 `CFBundleShortVersionString` 仍是 `1.4.9`。
+  `Cargo.toml`、deb、rpm、MSI 都不读它。
+- **注意**：这是**手工同步项**——`res/bump.sh` 只替换版本号本身，发版时需一并更新这里的日期。
+
+### flutter/windows/runner/Runner.rc
+
+- **改动**：`VERSION_AS_NUMBER` 的第 4 段由 `FLUTTER_VERSION_BUILD` 改为常量 `0`。
+- **目的**：`FILEVERSION` / `PRODUCTVERSION` 的四个字段各为 16 位（上限 65535），而 pubspec 的 build
+  number 现在是日期 20260916，直接写进去会让 rc.exe 数值越界、Windows 构建失败。
+- **兼容性**：只影响 exe 数值版本资源的第 4 段；展示用的 `FileVersion` / `ProductVersion` 字符串仍是
+  `VERSION_AS_STRING`（即 `1.4.9`）。仓库内没有任何地方读取该数值段（MSI 的版本取自运行时
+  `rustdesk --version`）。
+
+### src/common.rs
+
+- **改动**：`is_custom_client()` 由 `get_app_name() != "RustDesk"` 改为固定返回 `true`。
+- **目的**：二开分支不使用上游更新通道。`check_software_update()` 因此在最前面直接 `return`，不再请求
+  硬编码在 `hbb_common::version_check_request` 中的 `https://api.rustdesk.com/version/latest`；同时
+  Flutter（设置页「启动时检查更新」、连接页更新入口）与 Sciter 也不再展示上游更新 UI。
+- **影响面（有意接受）**：该函数还有其它调用点，全部改走 custom client 语义——`src/ipc.rs` 的
+  `hide_cm`；`src/updater.rs` 的 `update_msi`、custom-client staging 目录与 root update 跳过 stock
+  update；`src/flutter_ffi.rs` 的 `download-file-*` 在 MSI 安装时改为下载 `.exe`；`src/ui/index.tis`
+  的若干默认 option 值。
+- **兼容性**：单函数改动；上游升级时若该函数被改名或语义变更，需重新核对上述调用点。
+
 ## 升级复核清单
 
 升级上游 tag 时，按以下顺序核对：
@@ -367,3 +421,8 @@ libyuv 上游 tag 时，下列补丁需随上游改动重新核对或 rebase。
 31. `flutter/lib/common.dart` — 确认 `bool2option` 里 `kOptionEnableCheckUpdate` 的例外仍在（去掉会导致用户勾不上「开启」），以及 `mainGetLocalBoolOptionWithDefaultSync` 仍在。
 32. `flutter/lib/desktop/pages/connection_page.dart` — 确认 `_currentServerInfo()` 仍返回 `(label, detail)` record、`_currentServerDetail` 与 `Tooltip` 仍在，且公共服务器场景的 label 回落未被去掉。
 33. `flutter/lib/common/widgets/server_config_dialog.dart` — 确认 `requireElevation` 与 `ensureUnlocked()` 的三处调用仍在，且 `locked` 仍声明在 `dialogManager.show` 之外（builder 每次 `setState` 都会重跑）。
+34. `src/common.rs` — 确认 `is_custom_client()` 仍固定返回 `true`；上游若新增调用点，需复核「始终按 custom client 处理」是否仍可接受。
+35. `flutter/lib/desktop/pages/connection_page.dart` 与 `settings_page.dart` — 确认上游更新入口仍由 `bind.isCustomClient()` 门控（若上游改为别的判断，需重新挂载）。
+36. `flutter/pubspec.yaml` — 确认 build number 为日期且**大于**上一次发布的值（Android `versionCode` 必须单调递增，上限 2100000000）。
+37. `flutter/windows/runner/Runner.rc` — 确认 `VERSION_AS_NUMBER` 的第 4 段仍是常量（Flutter 模板升级时这一行可能被上游覆盖，恢复后会因 build number 超 16 位而构建失败）。
+38. `.github/workflows/flutter-nightly.yml` — 确认 `prepare-tag` job 与 `upload-tag: ${{ needs.prepare-tag.outputs.tag }}` 仍在；正式发布的 tag 需继续满足 `flutter-tag.yml` 的纯数字后缀规则。

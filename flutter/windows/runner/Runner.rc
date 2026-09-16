@@ -61,7 +61,10 @@ IDI_APP_ICON            ICON                    "resources\\app_icon.ico"
 //
 
 #if defined(FLUTTER_VERSION_MAJOR) && defined(FLUTTER_VERSION_MINOR) && defined(FLUTTER_VERSION_PATCH) && defined(FLUTTER_VERSION_BUILD)
-#define VERSION_AS_NUMBER FLUTTER_VERSION_MAJOR,FLUTTER_VERSION_MINOR,FLUTTER_VERSION_PATCH,FLUTTER_VERSION_BUILD
+// dec: FILEVERSION/PRODUCTVERSION 的四个字段各为 16 位（上限 65535），而本仓库把 pubspec 的
+// build number 用作日期（+20260916），直接写入会导致 rc.exe 数值越界、Windows 构建失败。
+// 数值版本只保留三段；展示用的 FileVersion/ProductVersion 字符串仍是 VERSION_AS_STRING。
+#define VERSION_AS_NUMBER FLUTTER_VERSION_MAJOR,FLUTTER_VERSION_MINOR,FLUTTER_VERSION_PATCH,0
 #else
 #define VERSION_AS_NUMBER 1,0,0,0
 #endif

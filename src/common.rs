@@ -2340,7 +2340,10 @@ pub fn get_builtin_option(key: &str) -> String {
 
 #[inline]
 pub fn is_custom_client() -> bool {
-    get_app_name() != "RustDesk"
+    // dec: 二开分支固定按 custom client 处理，见 docs/upstream-patches.md。
+    // 目的是让 check_software_update() 不再请求硬编码在 hbb_common::version_check_request
+    // 里的上游 https://api.rustdesk.com/version/latest，同时界面也不再展示上游更新入口。
+    true
 }
 
 pub fn verify_login(_raw: &str, _id: &str) -> bool {

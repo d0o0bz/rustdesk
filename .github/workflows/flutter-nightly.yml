@@ -7,9 +7,20 @@ on:
   workflow_dispatch:
 
 jobs:
+  # 发布 tag 带日期（nightly-20260916），与上游 rustdesk/rustdesk 的 nightly 区分开。
+  # 独立成一个 job 是因为 `uses:` 的 with: 里不能执行 shell。
+  prepare-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.date.outputs.tag }}
+    steps:
+      - id: date
+        run: echo "tag=nightly-$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
   run-flutter-nightly-build:
+    needs: prepare-tag
     uses: ./.github/workflows/flutter-build.yml
     secrets: inherit
     with:
       upload-artifact: true
-      upload-tag: "nightly"
+      upload-tag: ${{ needs.prepare-tag.outputs.tag }}
