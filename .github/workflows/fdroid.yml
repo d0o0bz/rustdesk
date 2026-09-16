@@ -16,6 +16,8 @@ jobs:
   update-fdroid-version-file:
     name: Publish RustDesk version file for F-Droid updater
     runs-on: ubuntu-latest
+    permissions:
+      contents: write        # 让 action-gh-release 能创建/更新 release（修复 403）
     steps:
       - name: Generate RustDesk version file
         run: |

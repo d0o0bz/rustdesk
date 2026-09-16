@@ -3771,7 +3771,10 @@ Color? disabledTextColor(BuildContext context, bool enabled) {
 }
 
 Widget loadPowered(BuildContext context) {
-  if (bind.mainGetBuildinOption(key: "hide-powered-by-me") == 'Y') {
+  // 二开分支：is_custom_client() 被固定为 true（用于关闭上游更新通道），这会让上游
+  // “Powered by RustDesk” 品牌占位文案被唤醒。此处对白标客户直接隐藏，避免暴露上游品牌。
+  if (bind.mainGetBuildinOption(key: "hide-powered-by-me") == 'Y' ||
+      isCustomClient) {
     return SizedBox.shrink();
   }
   return MouseRegion(

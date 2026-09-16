@@ -382,6 +382,27 @@ libyuv 上游 tag 时，下列补丁需随上游改动重新核对或 rebase。
   的若干默认 option 值。
 - **兼容性**：单函数改动；上游升级时若该函数被改名或语义变更，需重新核对上述调用点。
 
+## macOS 自构建应用无法打开（Gatekeeper 隔离）
+
+自构建产物（含本 fork 的 CI 所产 `RustDesk.app`）未使用 Apple Developer ID 签名、也未公证（notarize）。
+从浏览器下载到 `/Applications` 后，macOS 会打上 `com.apple.quarantine` 隔离属性，首次双击会报
+“无法验证开发者” / “RustDesk.app 已损坏，无法打开”。
+
+终端执行以下两条命令即可打开（清掉隔离属性并做 ad-hoc 自签名）：
+
+```sh
+sudo xattr -cr /Applications/RustDesk.app
+codesign --force --deep --sign - /Applications/RustDesk.app
+```
+
+- `xattr -cr`：删除该 app 上的全部扩展属性（含 quarantine 隔离标记），需 `sudo`（因位于系统目录）。
+- `codesign --force --deep --sign -`：`-` 表示 ad-hoc 自签名（用本机临时标识，不产生可验证签名）。
+  macOS 要求“被隔离过的 app 在打开前必须重新签名”，这一步正是为了满足该要求，并非真正可信签名。
+
+> 注意：这**只针对自构建 / fork CI 产物**。上游官方发布包已签名 + 公证，不会出现此问题。
+> 若要彻底免去该步骤，需在 macOS 构建机上配置 Apple Developer 证书，并在 `flutter-build.yml`
+> 的 macOS 步骤传入 `MACOS_CODESIGN_IDENTITY` / `MACOS_NOTARIZE_*` 等环境变量做签名与公证。
+
 ## 升级复核清单
 
 升级上游 tag 时，按以下顺序核对：
