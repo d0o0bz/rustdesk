@@ -214,6 +214,8 @@ impl RendezvousMediator {
     }
 
     pub async fn start_udp(server: ServerPtr, host: String) -> ResultType<()> {
+        use hbb_common::config::AvailabilityChecker;
+
         let host = check_port(&host, RENDEZVOUS_PORT);
         log::info!("start udp: {host}");
         let (mut socket, mut addr) = new_udp_for(&host, CONNECT_TIMEOUT).await?;
@@ -231,6 +233,13 @@ impl RendezvousMediator {
         const MAX_FAILS1: i64 = 2;
         const MAX_FAILS2: i64 = 4;
         const DNS_INTERVAL: i64 = 60_000;
+        // Budget of the handover probe below: long enough for a tunnel that is already up,
+        // short enough that UDP losses are still judged and fixed well before
+        // `auto_switch_server_loop` starts counting this server as down.
+        const TCP_PROBE_TIMEOUT_MS: u64 = 3_000;
+        // Set when the UDP path is dead while the same port answers over TCP, to leave the loop
+        // and carry on in `start_tcp` with the same server.
+        let mut tcp_fallback = false;
         let mut fails = 0;
         let mut last_register_resp: Option<Instant> = None;
         let mut last_register_sent: Option<Instant> = None;
@@ -307,6 +316,21 @@ impl RendezvousMediator {
                         if timeout {
                             fails += 1;
                             if fails >= MAX_FAILS2 {
+                                // Some networks drop the UDP packets while the very same port
+                                // answers over TCP, a vpn that filters everything but TCP for
+                                // instance. The server accepts registrations over TCP on that
+                                // port too, so hand over instead of calling a reachable server
+                                // down, which the ui shows as a network problem.
+                                if AvailabilityChecker::probe_tcp(&host, TCP_PROBE_TIMEOUT_MS)
+                                    .await
+                                    .is_some()
+                                {
+                                    log::info!(
+                                        "UDP register to {host} failed {fails} times but TCP is reachable, switching to TCP"
+                                    );
+                                    tcp_fallback = true;
+                                    break;
+                                }
                                 Config::update_latency(&host, -1);
                                 old_latency = 0;
                                 if last_dns_check.elapsed().as_millis() as i64 > DNS_INTERVAL {
@@ -329,6 +353,9 @@ impl RendezvousMediator {
                     }
                 }
             }
+        }
+        if tcp_fallback {
+            return Self::start_tcp(server, host).await;
         }
         Ok(())
     }

@@ -403,6 +403,38 @@ codesign --force --deep --sign - /Applications/RustDesk.app
 > 若要彻底免去该步骤，需在 macOS 构建机上配置 Apple Developer 证书，并在 `flutter-build.yml`
 > 的 macOS 步骤传入 `MACOS_CODESIGN_IDENTITY` / `MACOS_NOTARIZE_*` 等环境变量做签名与公证。
 
+## VPN 下的连通性判定加固与 UDP→TCP 自动回退
+
+背景：在屏蔽非 TCP 协议（ICMP / UDP 都不通、TCP 通）的 VPN 下，主页状态栏显示「未就绪，请检查网络连接」，
+而「多服务器配置」页面的自动检测显示同一台服务器「可用」。原因是两条判定链路走的传输层不同——状态栏
+由服务进程的 UDP 注册心跳决定（`ONLINE` map 写入 -1），检测页走的是 TCP 探测；且 rendezvous 传输只在
+代理 / WebSocket / 手动「Disable UDP」时才用 TCP，UDP 被丢包不会自动回退。
+
+### libs/hbb_common/src/config.rs
+
+- **文件**：`libs/hbb_common/src/config.rs`
+- **改动**：`AvailabilityChecker` 增加 `PROBE_DEADLINE`（6s）/ `PROBE_ATTEMPT_TIMEOUT`（3s）/ `PROBE_ATTEMPTS`（2）三个常量；
+  `measure_latency` 改为转调新增的私有 `measure_latency_until(host, port, deadline)`，后者用 `(host, port).to_socket_addrs()`
+  解析域名并逐个地址尝试（原实现只接受字面 `IP:port`，域名会直接 parse 失败）；`check` 与 `check_relay_server` 改为共享
+  一个 deadline 的 `check_relay_server_until`；新增 `pub async fn probe_tcp(target, deadline_ms) -> Option<u64>`（返回微秒）；
+  `AutoSwitcher::probe` 改为转调 `probe_tcp`；`mod tests_multi_config` 末尾新增 3 个单测（域名解析、端口关闭、deadline 用尽）。
+- **目的**：域名配置此前永远被报成「不可用」（未发出任何报文）；单次 3s 无重试在 VPN 首包丢失时误判；把探测预算收敛到一个 deadline，避免 UI 进程阻塞时间随地址数 / 端点个数放大。
+- **兼容性**：`measure_latency` / `check` / `check_id_server` / `check_relay_server` 签名与毫秒语义不变，`DetectionResult`
+  字段不变（FFI 契约与 Dart 侧无需改动）；`AutoSwitcher::probe` 语义（微秒、只看优先级）不变。新增常量与函数为 additive。
+
+### src/rendezvous_mediator.rs
+
+- **文件**：`src/rendezvous_mediator.rs`
+- **改动**：`start_udp` 内新增 `TCP_PROBE_TIMEOUT_MS = 3_000` 与 `tcp_fallback` 标志；`fails >= MAX_FAILS2` 分支在写 `-1`
+  之前先 `AvailabilityChecker::probe_tcp(&host, TCP_PROBE_TIMEOUT_MS)`，TCP 可达则打一条 info 日志、置标志并 `break`
+  出循环，循环后 `return Self::start_tcp(server, host).await`；TCP 不可达时保持原有 `-1` + `rebind_udp_for` 逻辑。
+- **目的**：UDP 被网络丢弃但同一端口 TCP 可达时（服务端在同一端口同时提供 UDP / TCP rendezvous），自动改用 TCP
+  完成注册，`ONLINE` 写入正延迟，状态栏恢复「就绪」；同时不再写 `-1`，避免误导性提示与自动切换在约 36s
+  （3 轮 × 12s）后把仍然可达的服务器误判为掉线切走（回退在约 15s 内完成）。
+- **兼容性**：不改 `start_tcp` 与 `Self::start` 的静态传输选择；不引入持久状态（配置变更 / 重启后仍从 UDP 开始，
+  网络恢复可自愈，`CheckIfRestart` 触发的 mediator 重启路径不变）；探测端口取自 `start_udp` 内已由
+  `check_port(&host, RENDEZVOUS_PORT)` 归一化的同一端点，未硬编码 21116。服务器确实不可达（TCP 也不通）时行为与上游一致。
+
 ## 升级复核清单
 
 升级上游 tag 时，按以下顺序核对：
@@ -447,3 +479,5 @@ codesign --force --deep --sign - /Applications/RustDesk.app
 36. `flutter/pubspec.yaml` — 确认 build number 为日期且**大于**上一次发布的值（Android `versionCode` 必须单调递增，上限 2100000000）。
 37. `flutter/windows/runner/Runner.rc` — 确认 `VERSION_AS_NUMBER` 的第 4 段仍是常量（Flutter 模板升级时这一行可能被上游覆盖，恢复后会因 build number 超 16 位而构建失败）。
 38. `.github/workflows/flutter-nightly.yml` — 确认 `prepare-tag` job 与 `upload-tag: ${{ needs.prepare-tag.outputs.tag }}` 仍在；正式发布的 tag 需继续满足 `flutter-tag.yml` 的纯数字后缀规则。
+39. `libs/hbb_common/src/config.rs` — 确认 `AvailabilityChecker` 的 `PROBE_DEADLINE` / `PROBE_ATTEMPT_TIMEOUT` / `PROBE_ATTEMPTS`、`measure_latency_until`、`probe_tcp` 及其单测仍在；上游若把 `measure_latency` 改名或让 `AutoSwitcher::probe` 改用别的探测，需把「域名解析 + 单 deadline 重试」补回，否则域名配置会被误报不可用。
+40. `src/rendezvous_mediator.rs` — 确认 `start_udp` 内 `fails >= MAX_FAILS2` 分支的 `probe_tcp` 回退（`TCP_PROBE_TIMEOUT_MS` + `tcp_fallback` + 循环后 `start_tcp`）仍在；上游若重写该注册循环，需把「UDP 被丢包但 TCP 可达时回退」重新挂上，否则 VPN 下会继续显示「未就绪」并可能误触发自动切换。
