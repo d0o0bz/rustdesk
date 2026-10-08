@@ -189,16 +189,22 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
 
   _buildConnStatusMsg() {
     widget.onSvcStatusChanged?.call();
-    return Text(
-      _svcStopped.value
-          ? translate("Service is not running")
-          : stateGlobal.svcStatus.value == SvcStatus.connecting
-              ? translate("connecting_status")
-              : stateGlobal.svcStatus.value == SvcStatus.notReady
-                  ? translate("not_ready_status")
-                  : translate('Ready'),
-      style: TextStyle(fontSize: em),
-    );
+    final status = stateGlobal.svcStatus.value;
+    var msg = _svcStopped.value
+        ? translate("Service is not running")
+        : status == SvcStatus.connecting
+            ? translate("connecting_status")
+            : status == SvcStatus.notReady
+                ? translate("not_ready_status")
+                : translate('Ready');
+    // Only said when the two disagree: registering this device needs udp while connecting out does
+    // not, so a device that cannot be reached can still reach others.
+    if (!_svcStopped.value &&
+        status != SvcStatus.ready &&
+        stateGlobal.initiateNum.value == 1) {
+      msg = '$msg · ${translate('Still able to initiate connections')}';
+    }
+    return Text(msg, style: TextStyle(fontSize: em));
   }
 
   /// The server in use as its name, with the addresses kept for the tooltip, or just the
@@ -267,6 +273,8 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
     } else {
       stateGlobal.svcStatus.value = SvcStatus.notReady;
     }
+    // Missing on builds that do not report it, which keeps the status bar as it was.
+    stateGlobal.initiateNum.value = status['initiate_num'] as int? ?? -1;
     _svcIsUsingPublicServer.value = await bind.mainIsUsingPublicServer();
     // An empty text takes the entry out of the status bar, so switching the option off, or
     // hiding the server settings, leaves the bar exactly as it was before.

@@ -804,5 +804,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Move up", ""),
         ("Move down", ""),
         ("Show current server in the status bar", ""),
+        ("Still able to initiate connections", ""),
+        ("check-availability-tooltip", ""),
     ].iter().cloned().collect();
 }

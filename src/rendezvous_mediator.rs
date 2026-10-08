@@ -213,9 +213,34 @@ impl RendezvousMediator {
             .unwrap_or(host.to_owned())
     }
 
-    pub async fn start_udp(server: ServerPtr, host: String) -> ResultType<()> {
-        use hbb_common::config::AvailabilityChecker;
+    /// Whether the server answers the rendezvous handshake over TCP, which is what `start_tcp`
+    /// needs before that transport can carry the registration.
+    ///
+    /// A bare TCP connect is not enough: a network that filters everything but TCP can complete
+    /// the connect and then drop the payload, which would make a dead transport look usable. The
+    /// server speaks first here, so waiting for its key exchange is the whole check the client
+    /// can do without registering twice.
+    async fn tcp_rendezvous_answers(host: String, ms_timeout: u64) -> bool {
+        let host = check_port(&host, RENDEZVOUS_PORT);
+        let mut conn = match connect_tcp(host.clone(), ms_timeout).await {
+            Ok(conn) => conn,
+            Err(err) => {
+                log::debug!("TCP connect to {host} failed: {err}");
+                return false;
+            }
+        };
+        match hbb_common::timeout(ms_timeout, conn.next()).await {
+            Ok(Some(Ok(bytes))) => Message::parse_from_bytes(&bytes)
+                .map(|msg| matches!(msg.union, Some(rendezvous_message::Union::KeyExchange(_))))
+                .unwrap_or(false),
+            _ => {
+                log::debug!("No key exchange from {host} over TCP");
+                false
+            }
+        }
+    }
 
+    pub async fn start_udp(server: ServerPtr, host: String) -> ResultType<()> {
         let host = check_port(&host, RENDEZVOUS_PORT);
         log::info!("start udp: {host}");
         let (mut socket, mut addr) = new_udp_for(&host, CONNECT_TIMEOUT).await?;
@@ -233,9 +258,10 @@ impl RendezvousMediator {
         const MAX_FAILS1: i64 = 2;
         const MAX_FAILS2: i64 = 4;
         const DNS_INTERVAL: i64 = 60_000;
-        // Budget of the handover probe below: long enough for a tunnel that is already up,
-        // short enough that UDP losses are still judged and fixed well before
-        // `auto_switch_server_loop` starts counting this server as down.
+        // Budget of the handover check below, for the connect and for the server's first
+        // message: long enough for a tunnel that is already up, short enough that UDP losses
+        // are still judged and fixed well before `auto_switch_server_loop` starts counting this
+        // server as down.
         const TCP_PROBE_TIMEOUT_MS: u64 = 3_000;
         // Set when the UDP path is dead while the same port answers over TCP, to leave the loop
         // and carry on in `start_tcp` with the same server.
@@ -316,17 +342,18 @@ impl RendezvousMediator {
                         if timeout {
                             fails += 1;
                             if fails >= MAX_FAILS2 {
-                                // Some networks drop the UDP packets while the very same port
-                                // answers over TCP, a vpn that filters everything but TCP for
-                                // instance. The server accepts registrations over TCP on that
-                                // port too, so hand over instead of calling a reachable server
-                                // down, which the ui shows as a network problem.
-                                if AvailabilityChecker::probe_tcp(&host, TCP_PROBE_TIMEOUT_MS)
+                                // Some networks drop the UDP packets while TCP to the same port
+                                // still works, a vpn that filters everything but TCP for
+                                // instance. Hand over there instead of calling a server that is
+                                // reachable down, which the ui shows as a network problem. The
+                                // check waits for the server's key exchange rather than just the
+                                // connect, so a filter that accepts any TCP and then drops the
+                                // payload is not mistaken for a working transport.
+                                if Self::tcp_rendezvous_answers(host.clone(), TCP_PROBE_TIMEOUT_MS)
                                     .await
-                                    .is_some()
                                 {
                                     log::info!(
-                                        "UDP register to {host} failed {fails} times but TCP is reachable, switching to TCP"
+                                        "UDP register to {host} failed {fails} times but TCP rendezvous answers, switching to TCP"
                                     );
                                     tcp_fallback = true;
                                     break;
@@ -355,7 +382,10 @@ impl RendezvousMediator {
             }
         }
         if tcp_fallback {
-            return Self::start_tcp(server, host).await;
+            // The handshake answered, but the transport can still fail afterwards, e.g. when the
+            // registration response never comes, so `start_tcp_or_mark_down` reports the server
+            // down instead of leaving the ui on "connecting" while the transports are retried.
+            return Self::start_tcp_or_mark_down(server, host).await;
         }
         Ok(())
     }
@@ -515,9 +545,25 @@ impl RendezvousMediator {
             || use_ws()
             || crate::is_udp_disabled()
         {
-            Self::start_tcp(server, host).await
+            Self::start_tcp_or_mark_down(server, host).await
         } else {
             Self::start_udp(server, host).await
+        }
+    }
+
+    /// Run the TCP rendezvous, reporting the server as down when it fails.
+    ///
+    /// `start_tcp` only ever writes a latency after a successful registration, so a transport that
+    /// never registers leaves the online state at whatever was there before. The ui renders that
+    /// as "connecting" for as long as the retries run, instead of showing the server as
+    /// unreachable the way the udp path does.
+    async fn start_tcp_or_mark_down(server: ServerPtr, host: String) -> ResultType<()> {
+        match Self::start_tcp(server, host.clone()).await {
+            Ok(()) => Ok(()),
+            Err(err) => {
+                Config::update_latency(&host, -1);
+                Err(err)
+            }
         }
     }
 

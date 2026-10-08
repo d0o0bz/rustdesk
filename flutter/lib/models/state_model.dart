@@ -17,6 +17,9 @@ class StateGlobal {
   final RxDouble _windowBorderWidth = RxDouble(kWindowBorderWidth);
   final RxBool showRemoteToolBar = false.obs;
   final svcStatus = SvcStatus.notReady.obs;
+  // Whether connecting out could work at all: -1 unknown, 0 unreachable, 1 reachable. Independent
+  // of svcStatus: registering this device needs udp, connecting out only needs tcp.
+  final RxInt initiateNum = (-1).obs;
   final RxInt videoConnCount = 0.obs;
   final RxBool isFocused = false.obs;
   // for mobile and web

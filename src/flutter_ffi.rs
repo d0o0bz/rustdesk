@@ -1123,7 +1123,11 @@ pub fn main_get_connect_status() -> String {
         if state > 0 {
             state = 1;
         }
-        serde_json::json!({ "status_num": state }).to_string()
+        serde_json::json!({
+            "status_num": state,
+            "initiate_num": crate::ui_interface::get_initiate_state(),
+        })
+        .to_string()
     }
 }
 

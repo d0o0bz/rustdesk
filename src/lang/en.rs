@@ -298,5 +298,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Move up", ""),
         ("Move down", ""),
         ("Show current server in the status bar", ""),
+        ("Still able to initiate connections", ""),
+        ("check-availability-tooltip", "Available means the connection channel is reachable over TCP. Registering this device needs UDP 21116 to be reachable, so a server can be available and still not register this device."),
     ].iter().cloned().collect();
 }

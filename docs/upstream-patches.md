@@ -425,15 +425,78 @@ codesign --force --deep --sign - /Applications/RustDesk.app
 ### src/rendezvous_mediator.rs
 
 - **文件**：`src/rendezvous_mediator.rs`
-- **改动**：`start_udp` 内新增 `TCP_PROBE_TIMEOUT_MS = 3_000` 与 `tcp_fallback` 标志；`fails >= MAX_FAILS2` 分支在写 `-1`
-  之前先 `AvailabilityChecker::probe_tcp(&host, TCP_PROBE_TIMEOUT_MS)`，TCP 可达则打一条 info 日志、置标志并 `break`
-  出循环，循环后 `return Self::start_tcp(server, host).await`；TCP 不可达时保持原有 `-1` + `rebind_udp_for` 逻辑。
-- **目的**：UDP 被网络丢弃但同一端口 TCP 可达时（服务端在同一端口同时提供 UDP / TCP rendezvous），自动改用 TCP
-  完成注册，`ONLINE` 写入正延迟，状态栏恢复「就绪」；同时不再写 `-1`，避免误导性提示与自动切换在约 36s
-  （3 轮 × 12s）后把仍然可达的服务器误判为掉线切走（回退在约 15s 内完成）。
+- **改动**：新增关联函数 `tcp_rendezvous_answers(host, ms_timeout)`（`connect_tcp` + 等首个报文并校验其为
+  `RendezvousMessage.key_exchange`）与 `start_tcp_or_mark_down(server, host)`（`start_tcp` 失败时补写 `-1` 再把错误
+  上抛）；`Self::start` 的 TCP 分支（代理 / WebSocket / 禁用 UDP）改走 `start_tcp_or_mark_down`；`start_udp` 内新增
+  `TCP_PROBE_TIMEOUT_MS = 3_000` 与 `tcp_fallback` 标志，`fails >= MAX_FAILS2` 分支在写 `-1` 之前先调用
+  `tcp_rendezvous_answers`，握手有回应则打一条 info 日志、置标志并 `break` 出循环，循环后交接到 TCP；握手不回应时
+  保持原有 `-1` + `rebind_udp_for` 逻辑。
+- **目的**：UDP 被网络丢弃但 TCP rendezvous 真正可用时自动改用 TCP 完成注册，`ONLINE` 写入正延迟，状态栏恢复
+  「就绪」，并避免自动切换在约 36s（3 轮 × 12s）后把仍然可达的服务器误判为掉线切走（回退在约 15s 内完成）。
+  **必须校验握手而不是只校验 TCP 连通**：实测存在「TCP 端口可连但不回应 rendezvous 握手」的环境（带 TCP 过滤的
+  VPN、只暴露了非 rendezvous 服务的端口等），此时裸 connect 探测会把不可用传输判成可用，结果是 `secure_tcp`
+  空等 `READ_TIMEOUT`(18s)、状态栏停在「正在接入」（`status_num = 0`）且每约 30s 重试一次。
 - **兼容性**：不改 `start_tcp` 与 `Self::start` 的静态传输选择；不引入持久状态（配置变更 / 重启后仍从 UDP 开始，
-  网络恢复可自愈，`CheckIfRestart` 触发的 mediator 重启路径不变）；探测端口取自 `start_udp` 内已由
-  `check_port(&host, RENDEZVOUS_PORT)` 归一化的同一端点，未硬编码 21116。服务器确实不可达（TCP 也不通）时行为与上游一致。
+  网络恢复可自愈，`CheckIfRestart` 触发的 mediator 重启路径不变）；探测端点取自 `start_udp` 内已由
+  `check_port(&host, RENDEZVOUS_PORT)` 归一化的同一地址，未硬编码 21116。**与上游的一处行为差异**：
+  `start_tcp` 只在注册成功时写延迟，本改动在它失败时补写 `-1`（`start_tcp_or_mark_down`），因此代理 / WebSocket /
+  禁用 UDP 模式下传输失败时，状态栏显示「未就绪」而不是一直「正在接入」，自动切换也会像 UDP 路径那样按掉线计数。
+
+## 可发起连接状态 / 自动切换同口径探测
+
+背景：屏蔽 UDP 的网络（VPN）里，注册（被连）必然失败，但控制端会话走的是 TCP/ws，**本机仍能连别人**。
+原来的 UI 只说「未就绪」，把这件事掩盖了；同时自动切换拿 **TCP 连通** 判候选可用、拿 **UDP 注册心跳** 判当前
+服务器掉线，两者口径不一致，于是会在"看起来可达但注册不上"的服务器之间来回切换。
+
+### libs/hbb_common/src/config.rs
+
+- **改动**：新增 `AvailabilityChecker::probe_udp(target, deadline_ms) -> Option<u64>`（UDP 发 `TestNatRequest`，
+  收到可解析的 `RendezvousMessage` 即视为可达，返回微秒）；`AutoSwitcher::probe` 改为按当前注册传输选择探测
+  ——`use_ws()` 或 option `disable-udp` 为 `Y` 时用 `probe_tcp`，否则用 `probe_udp`；`mod tests_multi_config`
+  末尾新增 `test_probe_udp_requires_an_answer`（本地 UDP 回包 → `Some`，静默端口 → `None`）。
+- **目的**：候选探测与"当前服务器是否掉线"（UDP 注册心跳）**同口径**——都在问"这台服务器能不能承载本机的注册"。
+  无 UDP 的网络下所有候选都探测失败，`try_switch` / `find_higher_priority` 返回 `None`，只留既有日志
+  `Server is unreachable, but no alternative server config is reachable either`，不再来回切换；UDP 正常时行为不变。
+  探测只发 `TestNatRequest`（服务端只回 `{port}`），不写 peer 表、不做任何注册，故无副作用。
+- **兼容性**：`probe_udp` 与既有 `probe_tcp` 语义对齐（`target` 为 `host:port`、返回微秒、失败只 debug 日志）；
+  `AutoSwitcher::probe` 的返回类型与 `probe_lowest_index` 的"优先级决定，不看延迟"语义不变；`auto_switch_server_loop`
+  的节奏与阈值、`get_online_state` 的口径均未改动。
+
+### src/ui_interface.rs
+
+- **改动**：新增 `INITIATE_STATE`/`INITIATE_FAILS`、常量 `INITIATE_PROBE_INTERVAL`(60s) /
+  `INITIATE_PROBE_TIMEOUT_MS`(3s) / `INITIATE_PROBE_FAILS_BEFORE_DOWN`(2)、`pub fn get_initiate_state() -> i8`
+  （`-1` 未知 / `0` 不可达 / `1` 可达）、`ensure_initiate_probe_started()`（独立 `std::thread` + 线程内自管
+  current-thread runtime，每 60s 探测 rendezvous 端点与 relay 端点，连续两轮失败才降级，状态变化才打日志）、
+  `initiate_reachable()` / `initiate_relay_endpoint()`；`UiStatus` 新增 `initiate_num: i8`，三处构造点同步。
+- **目的**：让 UI 能区分"能否发起连接"。它与注册状态**本质独立**（注册需 UDP，发起连接只需 TCP/ws），
+  因此单独探测、单独上报，而不是从 `status_num` 推导。
+- **兼容性**：`UiStatus` 是 FFI 序列化结构，新增字段是 additive（Dart 侧对缺失字段容错为"未知"）；
+  探测线程只在状态跃迁时各打一条 info 日志，不阻塞 UI/ipc 线程（自管 runtime，符合仓库既有做法）。
+
+### src/flutter_ffi.rs
+
+- **改动**：移动端 `main_get_connect_status()` 的 JSON 增加 `"initiate_num"`（桌面端经 `UiStatus` 自动带出）。
+- **兼容性**：additive 字段。
+
+### Flutter
+
+- **文件**：`flutter/lib/models/state_model.dart`、`flutter/lib/desktop/pages/connection_page.dart`、
+  `flutter/lib/models/server_model.dart`、`flutter/lib/mobile/pages/server_page.dart`
+- **改动**：新增 `initiateNum` / `_initiateStatus` 状态并在轮询里解析（缺失按 `-1` 未知）；桌面状态栏与移动端状态行
+  仅在**注册状态非「就绪」且可发起**时追加 `· <Still able to initiate connections>`，其余情况不显示该维度。
+- **兼容性**：仅在既有状态文案后追加后缀，不改变原有状态种类与颜色。
+
+- **文件**：`flutter/lib/common/widgets/server_config_widgets.dart`
+- **改动**：`ServerStatusBadge` 的文案与颜色**不变**，外层包一层 `Tooltip`（`check-availability-tooltip`），
+  说明「可用」只表示连接通道可达（TCP 探测），设备注册需要 UDP 21116 可达。
+- **目的**：避免把"TCP 连通"误读成"注册可用"（用户正是被这对矛盾误导）。
+- **兼容性**：仅新增 Tooltip，不改变徽标渲染与判定逻辑。
+
+- **文件**：`src/lang/template.rs` 及 `src/lang/*.rs`
+- **改动**：末尾追加 2 个 key —— `Still able to initiate connections`（状态栏后缀，key 即英文文案）、
+  `check-availability-tooltip`（en.rs 提供英文，cn/tw 提供中文，其余语言留空回退英文）。
+- **兼容性**：纯 additive 条目，不动既有 key 与非空翻译。
 
 ## 升级复核清单
 
@@ -480,4 +543,6 @@ codesign --force --deep --sign - /Applications/RustDesk.app
 37. `flutter/windows/runner/Runner.rc` — 确认 `VERSION_AS_NUMBER` 的第 4 段仍是常量（Flutter 模板升级时这一行可能被上游覆盖，恢复后会因 build number 超 16 位而构建失败）。
 38. `.github/workflows/flutter-nightly.yml` — 确认 `prepare-tag` job 与 `upload-tag: ${{ needs.prepare-tag.outputs.tag }}` 仍在；正式发布的 tag 需继续满足 `flutter-tag.yml` 的纯数字后缀规则。
 39. `libs/hbb_common/src/config.rs` — 确认 `AvailabilityChecker` 的 `PROBE_DEADLINE` / `PROBE_ATTEMPT_TIMEOUT` / `PROBE_ATTEMPTS`、`measure_latency_until`、`probe_tcp` 及其单测仍在；上游若把 `measure_latency` 改名或让 `AutoSwitcher::probe` 改用别的探测，需把「域名解析 + 单 deadline 重试」补回，否则域名配置会被误报不可用。
-40. `src/rendezvous_mediator.rs` — 确认 `start_udp` 内 `fails >= MAX_FAILS2` 分支的 `probe_tcp` 回退（`TCP_PROBE_TIMEOUT_MS` + `tcp_fallback` + 循环后 `start_tcp`）仍在；上游若重写该注册循环，需把「UDP 被丢包但 TCP 可达时回退」重新挂上，否则 VPN 下会继续显示「未就绪」并可能误触发自动切换。
+40. `src/rendezvous_mediator.rs` — 确认 `tcp_rendezvous_answers` 与 `start_udp` 内 `fails >= MAX_FAILS2` 的 TCP 回退（`TCP_PROBE_TIMEOUT_MS` + `tcp_fallback` + 循环后 `start_tcp`，失败补写 `-1`）仍在；上游若重写该注册循环，需把「UDP 被丢包但 TCP 握手可用时回退」重新挂上，否则 VPN 下会继续显示「未就绪」，而只按 TCP 连通判断会把不可用传输判成可用、让状态栏卡在「正在接入」。
+41. `libs/hbb_common/src/config.rs` — 确认 `AvailabilityChecker::probe_udp` 与 `AutoSwitcher::probe` 的「按注册传输选 UDP/TCP 探测」仍在；上游若重写自动切换的探测，需把同口径改回，否则在屏蔽 UDP 的网络里会在"可达但注册不上"的服务器之间来回切换。
+42. `src/ui_interface.rs` / `src/flutter_ffi.rs` 与三处 Dart（`state_model.dart`、`connection_page.dart`、`server_model.dart` / `server_page.dart`）— 确认 `UiStatus.initiate_num`、`get_initiate_state()`、状态栏/状态行的「· 仍可发起连接」后缀与 `ServerStatusBadge` 的 Tooltip 仍在；上游若重构状态栏或连接状态结构，需重新挂载这几处。

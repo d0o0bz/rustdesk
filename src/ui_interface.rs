@@ -37,6 +37,8 @@ pub type Children = Arc<Mutex<(bool, HashMap<(String, String), Child>)>>;
 #[derive(Clone, Debug, Serialize)]
 pub struct UiStatus {
     pub status_num: i32,
+    /// See `get_initiate_state`: whether connecting out could work at all.
+    pub initiate_num: i8,
     #[cfg(not(feature = "flutter"))]
     pub key_confirmed: bool,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -57,6 +59,7 @@ pub struct LoginDeviceInfo {
 lazy_static::lazy_static! {
     static ref UI_STATUS : Arc<Mutex<UiStatus>> = Arc::new(Mutex::new(UiStatus{
         status_num: 0,
+        initiate_num: -1,
         #[cfg(not(feature = "flutter"))]
         key_confirmed: false,
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -590,6 +593,111 @@ pub fn check_mouse_time() {
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn get_connect_status() -> UiStatus {
     UI_STATUS.lock().unwrap().clone()
+}
+
+/// Time between two checks of the endpoints an outgoing session uses.
+const INITIATE_PROBE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+/// Budget of one check, per endpoint.
+const INITIATE_PROBE_TIMEOUT_MS: u64 = 3_000;
+/// One failed check is not enough to report the channel as unusable, a tunnel that is still
+/// coming up would otherwise flip the status back and forth.
+const INITIATE_PROBE_FAILS_BEFORE_DOWN: u8 = 2;
+
+lazy_static::lazy_static! {
+    /// `-1` unknown, `0` unreachable, `1` reachable, for the endpoints of an outgoing session.
+    static ref INITIATE_STATE: std::sync::atomic::AtomicI8 =
+        std::sync::atomic::AtomicI8::new(-1);
+    static ref INITIATE_FAILS: std::sync::atomic::AtomicU8 =
+        std::sync::atomic::AtomicU8::new(0);
+}
+
+/// Whether this device can reach what it needs to connect out: the rendezvous endpoint and, when
+/// one can be derived, the relay it would fall back to.
+///
+/// This is deliberately separate from the registration state: registering this device needs udp,
+/// while connecting out only needs tcp/websocket, so one can work while the other does not. `-1`
+/// means "not probed yet" and callers must keep quiet then rather than report a failure that was
+/// never observed.
+pub fn get_initiate_state() -> i8 {
+    ensure_initiate_probe_started();
+    INITIATE_STATE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn ensure_initiate_probe_started() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let _ = std::thread::Builder::new()
+            .name("initiate-probe".to_owned())
+            .spawn(|| {
+                // A runtime of its own on purpose: this is a plain thread, and its callers are
+                // the ui and ipc threads, which a probe must never block.
+                let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                else {
+                    return;
+                };
+                loop {
+                    let reachable = rt.block_on(initiate_reachable());
+                    record_initiate_state(reachable);
+                    std::thread::sleep(INITIATE_PROBE_INTERVAL);
+                }
+            });
+    });
+}
+
+fn record_initiate_state(reachable: bool) {
+    use std::sync::atomic::Ordering;
+    if reachable {
+        INITIATE_FAILS.store(0, Ordering::Relaxed);
+        if INITIATE_STATE.swap(1, Ordering::Relaxed) != 1 {
+            log::info!("Outgoing connections are usable, the endpoints answer");
+        }
+    } else {
+        let fails = INITIATE_FAILS.load(Ordering::Relaxed).saturating_add(1);
+        INITIATE_FAILS.store(fails, Ordering::Relaxed);
+        if fails >= INITIATE_PROBE_FAILS_BEFORE_DOWN
+            && INITIATE_STATE.swap(0, Ordering::Relaxed) != 0
+        {
+            log::info!("The endpoints of an outgoing connection are unreachable");
+        }
+    }
+}
+
+async fn initiate_reachable() -> bool {
+    let rendezvous = Config::get_rendezvous_server();
+    if hbb_common::config::AvailabilityChecker::probe_tcp(&rendezvous, INITIATE_PROBE_TIMEOUT_MS)
+        .await
+        .is_none()
+    {
+        return false;
+    }
+    match initiate_relay_endpoint(&rendezvous) {
+        Some(relay) => {
+            hbb_common::config::AvailabilityChecker::probe_tcp(&relay, INITIATE_PROBE_TIMEOUT_MS)
+                .await
+                .is_some()
+        }
+        None => true,
+    }
+}
+
+/// The relay an outgoing session would fall back to, as `host:port`, or `None` when it cannot be
+/// derived without asking the server.
+fn initiate_relay_endpoint(rendezvous: &str) -> Option<String> {
+    let configured = Config::get_option(OPTION_RELAY_SERVER);
+    if !configured.trim().is_empty() {
+        return Some(hbb_common::socket_client::check_port(
+            configured.trim(),
+            hbb_common::config::RELAY_PORT,
+        ));
+    }
+    // No relay configured: a self hosted one sits on the next port up, which is also where
+    // `check_ws` maps the relay of a websocket connection. A url endpoint is left to itself.
+    if rendezvous.contains("://") {
+        return None;
+    }
+    Some(hbb_common::socket_client::increase_port(rendezvous, 1))
 }
 
 #[inline]
@@ -1428,6 +1536,7 @@ async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedReceiver<ipc:
                                 }
                                 *UI_STATUS.lock().unwrap() = UiStatus {
                                     status_num: x as _,
+                                    initiate_num: get_initiate_state(),
                                     #[cfg(not(feature = "flutter"))]
                                     key_confirmed: _c,
                                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -1493,6 +1602,7 @@ async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedReceiver<ipc:
         }
         *UI_STATUS.lock().unwrap() = UiStatus {
             status_num: -1,
+            initiate_num: get_initiate_state(),
             #[cfg(not(feature = "flutter"))]
             key_confirmed,
             #[cfg(not(any(target_os = "android", target_os = "ios")))]

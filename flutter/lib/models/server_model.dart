@@ -33,6 +33,7 @@ class ServerModel with ChangeNotifier {
   bool _showElevation = false;
   bool hideCm = false;
   int _connectStatus = 0; // Rendezvous Server status
+  int _initiateStatus = -1; // Whether connecting out could work at all
   String _verificationMethod = "";
   String _temporaryPasswordLength = "";
   bool _allowNumericOneTimePassword = false;
@@ -67,6 +68,8 @@ class ServerModel with ChangeNotifier {
   bool get showElevation => _showElevation;
 
   int get connectStatus => _connectStatus;
+
+  int get initiateStatus => _initiateStatus;
 
   String get verificationMethod {
     final index = [
@@ -153,6 +156,12 @@ class ServerModel with ChangeNotifier {
       final statusNum = connectionStatus['status_num'] as int;
       if (statusNum != _connectStatus) {
         _connectStatus = statusNum;
+        notifyListeners();
+      }
+      // Missing on builds that do not report it, which keeps this out of the ui there.
+      final initiateNum = connectionStatus['initiate_num'] as int? ?? -1;
+      if (initiateNum != _initiateStatus) {
+        _initiateStatus = initiateNum;
         notifyListeners();
       }
 

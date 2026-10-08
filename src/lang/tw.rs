@@ -804,5 +804,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Move up", "上移"),
         ("Move down", "下移"),
         ("Show current server in the status bar", "在狀態列顯示目前伺服器"),
+        ("Still able to initiate connections", "仍可發起連線"),
+        ("check-availability-tooltip", "可用表示連線通道可達（TCP 連通性檢測）；裝置註冊需要 UDP 21116 可達，因此「可用」不代表註冊可用。"),
     ].iter().cloned().collect();
 }

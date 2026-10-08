@@ -485,18 +485,27 @@ class ServerInfo extends StatelessWidget {
     }
 
     Widget ConnectionStateNotification() {
+      // Only said when the two disagree: registering this device needs udp while connecting out
+      // does not, so a device that cannot be reached can still reach others.
+      final canInitiate = serverModel.initiateStatus == 1
+          ? ' · ${translate('Still able to initiate connections')}'
+          : '';
       if (serverModel.connectStatus == -1) {
         return Row(children: [
           const Icon(Icons.warning_amber_sharp,
                   color: colorNegative, size: iconSize)
               .marginOnly(right: iconMarginRight),
-          Expanded(child: Text(translate('not_ready_status')))
+          Expanded(
+              child: Text(
+                  '${translate('not_ready_status')}$canInitiate'))
         ]);
       } else if (serverModel.connectStatus == 0) {
         return Row(children: [
           SizedBox(width: 20, height: 20, child: CircularProgressIndicator())
               .marginOnly(left: 4, right: iconMarginRight),
-          Expanded(child: Text(translate('connecting_status')))
+          Expanded(
+              child: Text(
+                  '${translate('connecting_status')}$canInitiate'))
         ]);
       } else {
         return Row(children: [

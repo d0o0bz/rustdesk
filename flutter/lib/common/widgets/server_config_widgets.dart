@@ -23,17 +23,20 @@ class ServerStatusBadge extends StatelessWidget {
       color = const Color(0xFFE04F5F);
       label = translate('Unavailable');
     }
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Container(
-        width: 8,
-        height: 8,
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      ),
-      if (label != null) ...[
-        const SizedBox(width: 4),
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-      ],
-    ]);
+    return Tooltip(
+      message: translate('check-availability-tooltip'),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        if (label != null) ...[
+          const SizedBox(width: 4),
+          Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        ],
+      ]),
+    );
   }
 }
 
